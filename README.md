@@ -26,3 +26,7 @@ Clear all empties the queue.
 ## Formats
 
 Output: AVIF, WebP, JPEG (MozJPEG), and PNG (palette). JPEG XL is not available in sharp’s default binaries.
+
+## Credits
+
+The loading orb is from [Orbkit](https://orbkit.zzzzshawn.cloud/) (SHDR-02), a shader by [XorDev](https://x.com/XorDev) ported with permission. Non-commercial use only, with attribution to XorDev.
