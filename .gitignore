@@ -10,6 +10,8 @@
 
 # testing
 /coverage
+/.fixtures/
+.pnpm-store/
 
 # next.js
 /.next/

@@ -1,21 +1,16 @@
-# Next.js template
+# tinywebp
 
-This is a Next.js template with shadcn/ui.
+Local TinyPNG-style image compressor. Images stay on this machine and are encoded with [sharp](https://sharp.pixelplumbing.com/).
 
-## Adding components
-
-To add components to your app, run the following command:
+## Run
 
 ```bash
-npx shadcn@latest add button
+pnpm install
+pnpm dev
 ```
 
-This will place the ui components in the `components` directory.
+Open [http://localhost:3000](http://localhost:3000). Drop images, pick formats, hit Compress.
 
-## Using components
+## Formats
 
-To use the components in your app, import them as follows:
-
-```tsx
-import { Button } from "@/components/ui/button";
-```
+AVIF, WebP, JPEG (MozJPEG), and PNG (palette). JPEG XL is not available in sharp’s default binaries.
