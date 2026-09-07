@@ -1,10 +1,32 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import { Check } from "lucide-react"
+import { ImageIcon } from "lucide-react"
 import { useCallback, useEffect, useId, useRef, useState } from "react"
 
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import { Progress } from "@/components/ui/progress"
+import { Separator } from "@/components/ui/separator"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   FORMAT_META,
   INPUT_ACCEPT,
@@ -21,7 +43,7 @@ import { cn } from "@/lib/utils"
 
 const Shdr02 = dynamic(() => import("@/components/ui/shdr-02"), {
   ssr: false,
-  loading: () => <div className="size-[270px]" aria-hidden />,
+  loading: () => <div className="size-[180px] lg:size-[270px]" aria-hidden />,
 })
 
 type OutputJob = {
@@ -44,6 +66,13 @@ type CompressJob = {
   fileId: string
   file: File
   format: OutputFormat
+}
+
+type QueueRow = {
+  key: string
+  item: ImageItem
+  format: OutputFormat | null
+  output?: OutputJob
 }
 
 async function runPool<T>(
@@ -89,6 +118,27 @@ function patchOutput(
   })
 }
 
+function queueRows(items: ImageItem[], selected: OutputFormat[]): QueueRow[] {
+  return items.flatMap((item): QueueRow[] => {
+    const formats = OUTPUT_FORMATS.filter(
+      (format) =>
+        selected.includes(format) ||
+        item.outputs.some((output) => output.format === format)
+    )
+
+    if (formats.length === 0) {
+      return [{ key: item.id, item, format: null, output: undefined }]
+    }
+
+    return formats.map((format) => ({
+      key: `${item.id}-${format}`,
+      item,
+      format,
+      output: item.outputs.find((entry) => entry.format === format),
+    }))
+  })
+}
+
 export function Compressor() {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -98,6 +148,7 @@ export function Compressor() {
   const [selected, setSelected] = useState<OutputFormat[]>(["webp"])
   const [dragging, setDragging] = useState(false)
   const [statusMessage, setStatusMessage] = useState("")
+  const [notice, setNotice] = useState<string | null>(null)
 
   itemsRef.current = items
 
@@ -128,7 +179,34 @@ export function Compressor() {
   const canCompress =
     items.length > 0 && selected.length > 0 && hasWork && !isCompressing
 
+  const completedDownloads = items.flatMap((item) =>
+    item.outputs.flatMap((output) =>
+      output.status === "done" && output.blobUrl
+        ? [
+            {
+              url: output.blobUrl,
+              name: outputFileName(item.file.name, output.format),
+            },
+          ]
+        : []
+    )
+  )
+
+  const canDownloadAll = completedDownloads.length > 0 && !isCompressing
+  const canClearAll = items.length > 0 && !isCompressing
   const allSelected = OUTPUT_FORMATS.every((format) => selected.includes(format))
+  const orbState = isCompressing
+    ? "speaking"
+    : items.length > 0
+      ? "thinking"
+      : "idle"
+  const statusCaption = isCompressing
+    ? "Compressing"
+    : items.length === 0
+      ? "Ready"
+      : statusMessage.startsWith("Finished")
+        ? statusMessage
+        : `${items.length} ready`
 
   const addFiles = useCallback(
     (list: FileList | File[]) => {
@@ -167,24 +245,52 @@ export function Compressor() {
       }
 
       if (skippedLarge > 0) {
+        setNotice("Skipped files over 25 MB")
         setStatusMessage("Skipped files over 25 MB")
       } else if (skippedType > 0) {
+        setNotice("Skipped files that are not images")
         setStatusMessage("Skipped files that are not images")
+      } else if (accepted.length < images.length) {
+        setNotice(`Only ${MAX_FILES} images can be queued`)
+        setStatusMessage(`Only ${MAX_FILES} images can be queued`)
       }
     },
     [trackUrl]
   )
 
-  function toggleFormat(format: OutputFormat) {
-    setSelected((current) => {
-      if (current.includes(format)) {
-        return current.filter((entry) => entry !== format)
-      }
+  function handleFormatsChange(next: string[]) {
+    setSelected(OUTPUT_FORMATS.filter((format) => next.includes(format)))
+  }
 
-      return OUTPUT_FORMATS.filter(
-        (entry) => current.includes(entry) || entry === format
-      )
+  function clearAll() {
+    if (!canClearAll) {
+      return
+    }
+
+    for (const url of urlsRef.current) {
+      URL.revokeObjectURL(url)
+    }
+    urlsRef.current.clear()
+    setItems([])
+    setNotice(null)
+    setStatusMessage("Queue cleared")
+  }
+
+  function downloadAll() {
+    if (!canDownloadAll) {
+      return
+    }
+
+    completedDownloads.forEach((download, index) => {
+      window.setTimeout(() => {
+        const link = document.createElement("a")
+        link.href = download.url
+        link.download = download.name
+        link.click()
+      }, index * 80)
     })
+
+    setStatusMessage("Downloading")
   }
 
   async function handleCompress() {
@@ -209,6 +315,7 @@ export function Compressor() {
       return
     }
 
+    setNotice(null)
     setStatusMessage("Compressing")
     setItems((current) =>
       current.map((item) => {
@@ -309,231 +416,307 @@ export function Compressor() {
       }
     })
 
-    setStatusMessage(
-      failed > 0 ? `Finished with ${failed} failed` : "Finished"
-    )
+    if (failed > 0) {
+      const message = `Finished with ${failed} failed`
+      setNotice(message)
+      setStatusMessage(message)
+    } else {
+      setStatusMessage("Finished")
+    }
   }
 
   return (
-    <div className="relative min-h-svh overflow-x-hidden text-neutral-800">
-      <div className="scene pointer-events-none absolute inset-0" />
-      <div className="relative z-10 mx-auto flex min-h-svh w-full max-w-[44rem] flex-col items-center px-4 pt-[max(3rem,10vh)] pb-16">
-        <div className="w-full overflow-hidden rounded-[1.75rem] shadow-[0_24px_60px_oklch(0.2_0.03_140/0.35)]">
-          <div
-            className={cn(
-              "bg-black/30 p-3 backdrop-blur-[2px] transition-colors",
-              dragging && "bg-black/45"
-            )}
-          >
-            <div
-              className={cn(
-                "relative min-h-[22rem] rounded-2xl border-2 border-dashed border-white/85 text-white transition-[border-color,background-color]",
-                dragging && "border-white bg-white/5"
-              )}
-              onDragEnter={(event) => {
-                event.preventDefault()
-                setDragging(true)
-              }}
-              onDragOver={(event) => {
-                event.preventDefault()
-              }}
-              onDragLeave={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-                  setDragging(false)
-                }
-              }}
-              onDrop={(event) => {
-                event.preventDefault()
-                setDragging(false)
-                addFiles(event.dataTransfer.files)
-              }}
-            >
-              <input
-                ref={inputRef}
-                id={inputId}
-                type="file"
-                accept={INPUT_ACCEPT}
-                multiple
-                aria-label="Drop images"
-                className="absolute inset-0 z-10 cursor-pointer opacity-0"
-                onChange={(event) => {
-                  if (event.target.files) {
-                    addFiles(event.target.files)
-                    event.target.value = ""
-                  }
+    <div
+      className="min-h-svh bg-background"
+      onDragEnter={(event) => {
+        event.preventDefault()
+        setDragging(true)
+      }}
+      onDragOver={(event) => {
+        event.preventDefault()
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+          setDragging(false)
+        }
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        setDragging(false)
+        addFiles(event.dataTransfer.files)
+      }}
+    >
+      <div className="mx-auto flex min-h-svh w-full max-w-6xl flex-col px-4 py-8 lg:px-6">
+        <header className="space-y-1">
+          <h1 className="text-lg font-medium tracking-tight">tinywebp</h1>
+          <p className="text-sm text-muted-foreground text-pretty">
+            Images stay on this machine.
+          </p>
+        </header>
+
+        <div className="mt-8 grid flex-1 gap-8 lg:grid-cols-[minmax(0,0.38fr)_minmax(0,1fr)] lg:items-start">
+          <aside className="flex flex-col items-center gap-3 lg:sticky lg:top-8">
+            <div className="relative flex items-center justify-center">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-6 rounded-full bg-foreground/8 blur-3xl"
+              />
+              <Shdr02
+                size={250}
+                state={orbState}
+                wrapper="grid"
+                className="text-foreground"
+                ariaLabel={statusCaption}
+                statePresets={{
+                  idle: {
+                    bulge: 0,
+                  },
+                  thinking: {
+                    bulge: 0,
+                  },
                 }}
               />
-              <div className="pointer-events-none flex min-h-[22rem] flex-col items-center justify-center px-6 py-10 text-center">
-                <Shdr02
-                  size={270}
-                  state={isCompressing ? "speaking" : "idle"}
-                  wrapper="glass"
-                  className="text-white"
-                  ariaLabel={isCompressing ? "Compressing" : "Ready"}
-                />
-                <p className="mt-5 text-xl font-semibold tracking-tight">
-                  Drop images
-                </p>
-                {items.length > 0 ? (
-                  <p className="mt-1 text-sm text-white/80">
-                    {items.length} ready
-                  </p>
-                ) : null}
-              </div>
             </div>
-          </div>
+            <p className="text-sm text-muted-foreground">{statusCaption}</p>
+          </aside>
 
-          <div className="flex items-center bg-white px-5 py-3.5">
-            <Button
-              type="button"
-              className="h-9 rounded-full bg-[oklch(0.72_0.17_135)] px-5 text-white hover:bg-[oklch(0.66_0.17_135)]"
-              disabled={!canCompress}
-              onClick={() => {
-                void handleCompress()
-              }}
-            >
-              Compress
-            </Button>
-          </div>
+          <div className="flex min-w-0 flex-col gap-4">
+            {notice ? (
+              <Alert
+                variant={notice.includes("failed") ? "destructive" : "default"}
+              >
+                <AlertTitle>
+                  {notice.includes("failed") ? "Compression failed" : "Notice"}
+                </AlertTitle>
+                <AlertDescription>{notice}</AlertDescription>
+              </Alert>
+            ) : null}
 
-          <div className="flex flex-wrap items-center gap-2 bg-[oklch(0.96_0.02_145)] px-5 py-3.5">
-            {OUTPUT_FORMATS.map((format) => {
-              const active = selected.includes(format)
-
-              return (
-                <button
-                  key={format}
-                  type="button"
-                  aria-pressed={active}
-                  disabled={isCompressing}
-                  onClick={() => toggleFormat(format)}
-                  className={cn(
-                    "inline-flex h-9 items-center gap-1.5 rounded-full border bg-white px-3.5 text-sm font-medium tracking-wide transition-[color,border-color,background-color,transform] outline-none focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.17_135)] focus-visible:ring-offset-2 active:scale-[0.96] disabled:opacity-50",
-                    active
-                      ? "border-[oklch(0.72_0.17_135)] text-[oklch(0.48_0.13_135)]"
-                      : "border-neutral-300 text-neutral-600 hover:border-neutral-400"
-                  )}
-                >
-                  {active ? (
-                    <Check className="size-3.5" strokeWidth={2.25} />
-                  ) : null}
-                  {FORMAT_META[format].label}
-                </button>
-              )
-            })}
-
-            <div
-              aria-hidden
-              className="mx-1 hidden h-6 w-px bg-neutral-300 sm:block"
-            />
-
-            <button
-              type="button"
-              disabled={isCompressing || allSelected}
-              onClick={() => setSelected([...OUTPUT_FORMATS])}
+            <Card
               className={cn(
-                "inline-flex h-9 items-center rounded-full border bg-white px-3.5 text-sm font-medium tracking-wide transition-[color,border-color,transform] outline-none focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.17_135)] focus-visible:ring-offset-2 active:scale-[0.96] disabled:opacity-50",
-                allSelected
-                  ? "border-[oklch(0.72_0.17_135)] text-[oklch(0.48_0.13_135)]"
-                  : "border-neutral-300 text-neutral-600 hover:border-neutral-400"
+                "transition-[box-shadow]",
+                dragging && "ring-2 ring-ring"
               )}
             >
-              Select all
-            </button>
-          </div>
-        </div>
+              <CardContent>
+                <input
+                  ref={inputRef}
+                  id={inputId}
+                  type="file"
+                  accept={INPUT_ACCEPT}
+                  multiple
+                  className="sr-only"
+                  aria-hidden
+                  tabIndex={-1}
+                  onChange={(event) => {
+                    if (event.target.files) {
+                      addFiles(event.target.files)
+                      event.target.value = ""
+                    }
+                  }}
+                />
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <ImageIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>
+                      {items.length > 0 ? "Add more images" : "Drop images"}
+                    </EmptyTitle>
+                    <EmptyDescription>
+                      PNG, JPEG, WebP, AVIF, and GIF up to 25 MB.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => inputRef.current?.click()}
+                    >
+                      Choose files
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              </CardContent>
+            </Card>
 
-        {items.length > 0 ? (
-          <ul className="mt-6 w-full overflow-hidden rounded-[1.5rem] bg-white/92 shadow-[0_18px_40px_oklch(0.2_0.03_140/0.22)] backdrop-blur-md">
-            {items.map((item, index) => (
-              <li
-                key={item.id}
-                className={cn(
-                  "px-5 py-4",
-                  index > 0 && "border-t border-neutral-200/80"
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={item.previewUrl}
-                    alt=""
-                    className="size-12 shrink-0 rounded-lg object-cover outline outline-1 outline-black/10"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-neutral-800">
-                      {item.file.name}
-                    </p>
-                    <p className="text-sm text-neutral-500 tabular-nums">
-                      {formatBytes(item.file.size)}
-                    </p>
+            <Card>
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <ToggleGroup
+                  multiple
+                  value={selected}
+                  onValueChange={handleFormatsChange}
+                  disabled={isCompressing}
+                  variant="outline"
+                  spacing={0}
+                  className="flex-wrap"
+                >
+                  {OUTPUT_FORMATS.map((format) => (
+                    <ToggleGroupItem key={format} value={format}>
+                      {FORMAT_META[format].label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
 
-                    {item.outputs.length > 0 ? (
-                      <ul className="mt-3 space-y-2">
-                        {item.outputs.map((output) => (
-                          <li
-                            key={output.format}
-                            className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
-                          >
-                            <span className="w-12 font-medium tracking-wide text-neutral-600">
-                              {FORMAT_META[output.format].label}
-                            </span>
-                            {output.status === "done" &&
-                            output.compressedSize != null ? (
-                              <>
-                                <span className="text-neutral-500 tabular-nums">
-                                  {formatBytes(output.originalSize)}
-                                  {" → "}
-                                  {formatBytes(output.compressedSize)}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={isCompressing || allSelected}
+                  onClick={() => setSelected([...OUTPUT_FORMATS])}
+                >
+                  Select all
+                </Button>
+
+                <Separator
+                  orientation="vertical"
+                  className="hidden h-6 sm:block"
+                />
+
+                <div className="flex flex-wrap items-center gap-2 sm:ms-auto">
+                  <Button
+                    type="button"
+                    disabled={!canCompress}
+                    onClick={() => {
+                      void handleCompress()
+                    }}
+                  >
+                    Compress
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!canDownloadAll}
+                    onClick={downloadAll}
+                  >
+                    Download all
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={!canClearAll}
+                    onClick={clearAll}
+                  >
+                    Clear all
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {items.length > 0 ? (
+              <Card className="py-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-14">Preview</TableHead>
+                      <TableHead>File</TableHead>
+                      <TableHead>Original</TableHead>
+                      <TableHead>Format</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Result</TableHead>
+                      <TableHead className="text-end">Download</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {queueRows(items, selected).map((row) => {
+                      const output = row.output
+                      const status = output?.status ?? "waiting"
+
+                      return (
+                        <TableRow key={row.key}>
+                          <TableCell>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={row.item.previewUrl}
+                              alt=""
+                              className="size-10 rounded-md object-cover outline outline-1 outline-black/10 dark:outline-white/10"
+                            />
+                          </TableCell>
+                          <TableCell className="max-w-48 truncate font-medium">
+                            {row.item.file.name}
+                          </TableCell>
+                          <TableCell className="tabular-nums text-muted-foreground">
+                            {formatBytes(row.item.file.size)}
+                          </TableCell>
+                          <TableCell>
+                            {row.format ? (
+                              <Badge variant="outline">
+                                {FORMAT_META[row.format].label}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {status === "compressing" ? (
+                              <Progress
+                                value={null}
+                                className="w-24 gap-1.5"
+                              >
+                                <span className="text-xs text-muted-foreground">
+                                  Compressing
                                 </span>
-                                <span className="font-medium text-[oklch(0.48_0.13_135)] tabular-nums">
+                              </Progress>
+                            ) : status === "error" ? (
+                              <Badge variant="destructive">
+                                {output?.error ?? "Unable to compress"}
+                              </Badge>
+                            ) : status === "done" ? (
+                              <Badge variant="secondary">Done</Badge>
+                            ) : status === "queued" ? (
+                              <Badge variant="outline">Queued</Badge>
+                            ) : (
+                              <Badge variant="outline">Waiting</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="tabular-nums text-muted-foreground">
+                            {status === "done" &&
+                            output?.compressedSize != null ? (
+                              <span>
+                                {formatBytes(output.compressedSize)}{" "}
+                                <span className="text-foreground">
                                   {savingsLabel(
                                     output.originalSize,
                                     output.compressedSize
                                   )}
                                 </span>
-                                {output.blobUrl ? (
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                          <TableCell className="text-end">
+                            {status === "done" &&
+                            output?.blobUrl &&
+                            row.format ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                nativeButton={false}
+                                render={
                                   <a
                                     href={output.blobUrl}
                                     download={outputFileName(
-                                      item.file.name,
-                                      output.format
+                                      row.item.file.name,
+                                      row.format
                                     )}
-                                    className={cn(
-                                      buttonVariants({
-                                        variant: "outline",
-                                        size: "xs",
-                                      }),
-                                      "ms-auto rounded-full"
-                                    )}
-                                  >
-                                    Download
-                                  </a>
-                                ) : null}
-                              </>
-                            ) : output.status === "error" ? (
-                              <span className="text-red-600">
-                                {output.error ?? "Unable to compress"}
-                              </span>
+                                  />
+                                }
+                              >
+                                Download
+                              </Button>
                             ) : (
-                              <span className="text-neutral-400">
-                                {output.status === "compressing"
-                                  ? "Compressing"
-                                  : "Waiting"}
-                              </span>
+                              <span className="text-muted-foreground">—</span>
                             )}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-2 text-sm text-neutral-400">Waiting</p>
-                    )}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </Card>
+            ) : null}
+          </div>
+        </div>
 
         <p className="sr-only" aria-live="polite">
           {statusMessage}
