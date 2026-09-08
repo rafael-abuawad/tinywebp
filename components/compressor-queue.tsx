@@ -1,5 +1,7 @@
 "use client"
 
+import Image from "next/image"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -12,7 +14,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { queueRows, type ImageItem, type OutputJob, type QueueRow } from "@/lib/compressor-model"
+import {
+  queueRows,
+  type ImageItem,
+  type OutputJob,
+  type QueueRow,
+} from "@/lib/compressor-model"
 import {
   FORMAT_META,
   formatBytes,
@@ -34,7 +41,9 @@ function QueueStatus({ output }: { output?: OutputJob }) {
 
   if (status === "error") {
     return (
-      <Badge variant="destructive">{output?.error ?? "Unable to compress"}</Badge>
+      <Badge variant="destructive">
+        {output?.error ?? "Unable to compress"}
+      </Badge>
     )
   }
 
@@ -91,17 +100,20 @@ function QueueRowView({ row }: { row: QueueRow }) {
   return (
     <TableRow>
       <TableCell>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={row.item.previewUrl}
-          alt=""
-          className="size-10 rounded-md object-cover outline outline-1 outline-black/10 dark:outline-white/10"
-        />
+        <div className="relative size-10 overflow-hidden rounded-md outline outline-1 outline-black/10 dark:outline-white/10">
+          <Image
+            src={row.item.previewUrl}
+            alt=""
+            fill
+            sizes="40px"
+            className="object-cover"
+          />
+        </div>
       </TableCell>
       <TableCell className="max-w-48 truncate font-medium">
         {row.item.file.name}
       </TableCell>
-      <TableCell className="tabular-nums text-muted-foreground">
+      <TableCell className="text-muted-foreground tabular-nums">
         {formatBytes(row.item.file.size)}
       </TableCell>
       <TableCell>
@@ -114,7 +126,7 @@ function QueueRowView({ row }: { row: QueueRow }) {
       <TableCell>
         <QueueStatus output={row.output} />
       </TableCell>
-      <TableCell className="tabular-nums text-muted-foreground">
+      <TableCell className="text-muted-foreground tabular-nums">
         <QueueResult output={row.output} />
       </TableCell>
       <TableCell className="text-end">
