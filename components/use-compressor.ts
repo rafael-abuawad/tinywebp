@@ -73,7 +73,9 @@ export function useCompressor() {
   const downloads = completedDownloads(items)
   const canDownloadAll = downloads.length > 0 && !isCompressing
   const canClearAll = items.length > 0 && !isCompressing
-  const allSelected = OUTPUT_FORMATS.every((format) => selected.includes(format))
+  const allSelected = OUTPUT_FORMATS.every((format) =>
+    selected.includes(format)
+  )
   const orbState = orbPlaybackState(isCompressing, items.length)
   const statusCaption = queueStatusCaption(
     isCompressing,
@@ -81,28 +83,34 @@ export function useCompressor() {
     statusMessage
   )
 
-  const addFiles = useCallback((list: FileList | File[]) => {
-    const { images, skippedLarge, skippedType } = partitionIncomingFiles(list)
-    const { accepted, acceptedCount } = acceptQueuedFiles(images, items.length)
-    const additions = toQueuedItems(accepted, (file, id) =>
-      cacheObjectUrl(previewCacheKey(id), file)
-    )
+  const addFiles = useCallback(
+    (list: FileList | File[]) => {
+      const { images, skippedLarge, skippedType } = partitionIncomingFiles(list)
+      const { accepted, acceptedCount } = acceptQueuedFiles(
+        images,
+        items.length
+      )
+      const additions = toQueuedItems(accepted, (file, id) =>
+        cacheObjectUrl(previewCacheKey(id), file)
+      )
 
-    if (additions.length > 0) {
-      setItems((current) => [...current, ...additions])
-    }
+      if (additions.length > 0) {
+        setItems((current) => [...current, ...additions])
+      }
 
-    const message = intakeNotice(
-      skippedLarge,
-      skippedType,
-      acceptedCount,
-      images.length
-    )
-    if (message) {
-      setNotice(message)
-      setStatusMessage(message)
-    }
-  }, [items.length])
+      const message = intakeNotice(
+        skippedLarge,
+        skippedType,
+        acceptedCount,
+        images.length
+      )
+      if (message) {
+        setNotice(message)
+        setStatusMessage(message)
+      }
+    },
+    [items.length]
+  )
 
   const handleFormatsChange = useCallback((next: string[]) => {
     setSelected(OUTPUT_FORMATS.filter((format) => next.includes(format)))

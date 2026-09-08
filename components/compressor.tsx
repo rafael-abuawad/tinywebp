@@ -36,7 +36,7 @@ export function Compressor() {
       <div className="mx-auto flex min-h-svh w-full max-w-6xl flex-col px-4 py-8 lg:px-6">
         <header className="space-y-1">
           <h1 className="text-lg font-medium tracking-tight">tinywebp</h1>
-          <p className="text-sm text-muted-foreground text-pretty">
+          <p className="text-sm text-pretty text-muted-foreground">
             Images stay on this machine.
           </p>
         </header>

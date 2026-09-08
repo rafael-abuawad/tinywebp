@@ -30,7 +30,9 @@ export function CompressorDropZone({
   onFiles: (list: FileList | File[]) => void
 }) {
   return (
-    <Card className={cn("transition-[box-shadow]", dragging && "ring-2 ring-ring")}>
+    <Card
+      className={cn("transition-[box-shadow]", dragging && "ring-2 ring-ring")}
+    >
       <CardContent>
         <input
           ref={inputRef}

@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { compressImage } from "@/lib/compress"
-import {
-  FORMAT_META,
-  MAX_FILE_BYTES,
-  isOutputFormat,
-} from "@/lib/formats"
+import { FORMAT_META, MAX_FILE_BYTES, isOutputFormat } from "@/lib/formats"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -50,7 +46,10 @@ export async function POST(request: Request) {
       format: formatValue,
       originalSize,
       compressedSize,
-      ratio: originalSize > 0 ? Number((compressedSize / originalSize).toFixed(3)) : null,
+      ratio:
+        originalSize > 0
+          ? Number((compressedSize / originalSize).toFixed(3))
+          : null,
     })
 
     const body = Uint8Array.from(output)

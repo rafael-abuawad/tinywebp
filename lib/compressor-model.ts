@@ -84,7 +84,10 @@ export function patchOutput(
   })
 }
 
-export function queueRows(items: ImageItem[], selected: OutputFormat[]): QueueRow[] {
+export function queueRows(
+  items: ImageItem[],
+  selected: OutputFormat[]
+): QueueRow[] {
   const selectedFormats = new Set(selected)
 
   return items.flatMap((item): QueueRow[] => {
@@ -113,7 +116,10 @@ export function isCompressingItems(items: ImageItem[]) {
   )
 }
 
-export function hasUnfinishedWork(items: ImageItem[], selected: OutputFormat[]) {
+export function hasUnfinishedWork(
+  items: ImageItem[],
+  selected: OutputFormat[]
+) {
   return items.some((item) =>
     selected.some((format) => {
       const output = item.outputs.find((entry) => entry.format === format)

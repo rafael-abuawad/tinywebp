@@ -102,7 +102,7 @@ void main() {
   float a = mask * visibility;
   gl_FragColor = vec4(col * a, a);
 }
-`;
+`
 
 export const shdr02Orb: OrbVariant = {
   key: "shdr-02",
@@ -110,21 +110,127 @@ export const shdr02Orb: OrbVariant = {
   note: "ornate scrollwork on a rolling dome",
   frag: ROCAILLE_FRAG,
   params: [
-    { key: "speed", label: "Anim speed", min: 0.015, max: 10, step: 0.05, default: 0.5, integrate: true },
-    { key: "swirl", label: "Swirl", min: 0, max: 3, step: 0.015, default: 0.06 },
-    { key: "radius", label: "Radius", min: 0.15, max: 3, step: 0.015, default: 0.9 },
-    { key: "swell", label: "Input swell", min: 0, max: 1, step: 0.01, default: 0.06 },
-    { key: "zoom", label: "Pattern zoom", min: 0.15, max: 40, step: 0.2, default: 4.4 },
-    { key: "bulge", label: "Sphere bulge", min: 0, max: 10, step: 0.05, default: 0.35 },
-    { key: "warpFreq", label: "Warp frequency", min: 0.05, max: 10, step: 0.05, default: 1.5 },
-    { key: "hueShift", label: "Hue shift", min: 0, max: 6.283, step: 0.05, default: 0 },
-    { key: "coreClamp", label: "Flare size", min: 0.003, max: 3, step: 0.015, default: 0.12 },
-    { key: "falloff", label: "Fill", min: 0.05, max: 4, step: 0.05, default: 1 },
-    { key: "gain", label: "Exposure", min: 0.015, max: 10, step: 0.05, default: 0.55 },
-    { key: "rim", label: "Rim light", min: 0, max: 3, step: 0.015, default: 0.12 },
-    { key: "rimPow", label: "Rim tightness", min: 0.15, max: 15, step: 0.1, default: 2.2 },
-    { key: "alphaGain", label: "Alpha gain", min: 0.05, max: 15, step: 0.1, default: 2.4 },
-    { key: "baseVis", label: "Base visibility", min: 0, max: 1.5, step: 0.01, default: 0.08 }
+    {
+      key: "speed",
+      label: "Anim speed",
+      min: 0.015,
+      max: 10,
+      step: 0.05,
+      default: 0.5,
+      integrate: true,
+    },
+    {
+      key: "swirl",
+      label: "Swirl",
+      min: 0,
+      max: 3,
+      step: 0.015,
+      default: 0.06,
+    },
+    {
+      key: "radius",
+      label: "Radius",
+      min: 0.15,
+      max: 3,
+      step: 0.015,
+      default: 0.9,
+    },
+    {
+      key: "swell",
+      label: "Input swell",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.06,
+    },
+    {
+      key: "zoom",
+      label: "Pattern zoom",
+      min: 0.15,
+      max: 40,
+      step: 0.2,
+      default: 4.4,
+    },
+    {
+      key: "bulge",
+      label: "Sphere bulge",
+      min: 0,
+      max: 10,
+      step: 0.05,
+      default: 0.35,
+    },
+    {
+      key: "warpFreq",
+      label: "Warp frequency",
+      min: 0.05,
+      max: 10,
+      step: 0.05,
+      default: 1.5,
+    },
+    {
+      key: "hueShift",
+      label: "Hue shift",
+      min: 0,
+      max: 6.283,
+      step: 0.05,
+      default: 0,
+    },
+    {
+      key: "coreClamp",
+      label: "Flare size",
+      min: 0.003,
+      max: 3,
+      step: 0.015,
+      default: 0.12,
+    },
+    {
+      key: "falloff",
+      label: "Fill",
+      min: 0.05,
+      max: 4,
+      step: 0.05,
+      default: 1,
+    },
+    {
+      key: "gain",
+      label: "Exposure",
+      min: 0.015,
+      max: 10,
+      step: 0.05,
+      default: 0.55,
+    },
+    {
+      key: "rim",
+      label: "Rim light",
+      min: 0,
+      max: 3,
+      step: 0.015,
+      default: 0.12,
+    },
+    {
+      key: "rimPow",
+      label: "Rim tightness",
+      min: 0.15,
+      max: 15,
+      step: 0.1,
+      default: 2.2,
+    },
+    {
+      key: "alphaGain",
+      label: "Alpha gain",
+      min: 0.05,
+      max: 15,
+      step: 0.1,
+      default: 2.4,
+    },
+    {
+      key: "baseVis",
+      label: "Base visibility",
+      min: 0,
+      max: 1.5,
+      step: 0.01,
+      default: 0.08,
+    },
   ],
   colors: [],
   /*
@@ -147,7 +253,7 @@ export const shdr02Orb: OrbVariant = {
       falloff: 1,
       gain: 0.55,
       rim: 0.12,
-      alphaGain: 2.4
+      alphaGain: 2.4,
     },
     thinking: {
       speed: 0.65,
@@ -157,7 +263,7 @@ export const shdr02Orb: OrbVariant = {
       falloff: 0.96,
       gain: 0.6,
       rim: 0.13,
-      alphaGain: 2.5
+      alphaGain: 2.5,
     },
     /*
       speaking is SPEED-led, like hydrogen's: the scrollwork keeps the idle
@@ -179,7 +285,7 @@ export const shdr02Orb: OrbVariant = {
       falloff: 1.1,
       gain: 0.85,
       rim: 0.2,
-      alphaGain: 3
-    }
-  }
-};
+      alphaGain: 3,
+    },
+  },
+}

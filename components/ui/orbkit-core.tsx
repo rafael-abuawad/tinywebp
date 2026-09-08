@@ -1,4 +1,4 @@
-"use client";
+"use client"
 
 import {
   useEffect,
@@ -6,8 +6,8 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
-  type RefObject
-} from "react";
+  type RefObject,
+} from "react"
 
 import {
   hexToRgb,
@@ -15,16 +15,16 @@ import {
   type OrbParamValues,
   type OrbState,
   type OrbVariant,
-  type OrbWrapper
-} from "@/components/ui/orbkit-model";
+  type OrbWrapper,
+} from "@/components/ui/orbkit-model"
 
 export type {
   OrbColorValues,
   OrbParamValues,
   OrbState,
   OrbVariant,
-  OrbWrapper
-} from "@/components/ui/orbkit-model";
+  OrbWrapper,
+} from "@/components/ui/orbkit-model"
 
 /* ----------------------------------------------------------------------------
    Orbkit core — raw WebGL shader orb runtime. No dependencies.
@@ -42,7 +42,7 @@ export type {
 ---------------------------------------------------------------------------- */
 
 function clamp01(n: number) {
-  return Math.min(1, Math.max(0, n));
+  return Math.min(1, Math.max(0, n))
 }
 
 /** Per-state [input, output] volume synthesis. */
@@ -65,37 +65,46 @@ function clamp01(n: number) {
  * 1.50s to within 2% against the exponential's 2.18s, since an exponential
  * only ever asymptotes toward its target.
  */
-const PARAM_EASE = 4;
+const PARAM_EASE = 4
 
 /*
   One step of a critically damped spring, implicit (semi-implicit Euler would
   blow up at the frame times a backgrounded tab produces). Returns nothing and
   writes through the scratch pair so the hot loop allocates nothing.
 */
-const springOut = { x: 0, v: 0 };
-function springStep(x: number, v: number, target: number, dt: number, omega: number) {
-  const f = 1 + 2 * dt * omega;
-  const oo = omega * omega;
-  const hoo = dt * oo;
-  const hhoo = dt * hoo;
-  const detInv = 1 / (f + hhoo);
-  springOut.x = (f * x + dt * v + hhoo * target) * detInv;
-  springOut.v = (v + hoo * (target - x)) * detInv;
+const springOut = { x: 0, v: 0 }
+function springStep(
+  x: number,
+  v: number,
+  target: number,
+  dt: number,
+  omega: number
+) {
+  const f = 1 + 2 * dt * omega
+  const oo = omega * omega
+  const hoo = dt * oo
+  const hhoo = dt * hoo
+  const detInv = 1 / (f + hhoo)
+  springOut.x = (f * x + dt * v + hhoo * target) * detInv
+  springOut.v = (v + hoo * (target - x)) * detInv
 }
 
 function targetVolumes(state: OrbState, t: number): [number, number] {
   switch (state) {
     case "idle":
-      return [0, 0.3];
+      return [0, 0.3]
     case "speaking":
       return [
         clamp01(0.65 + Math.sin(t * 4.8) * 0.22),
-        clamp01(0.75 + Math.sin(t * 3.6) * 0.22)
-      ];
+        clamp01(0.75 + Math.sin(t * 3.6) * 0.22),
+      ]
     case "thinking": {
-      const base = 0.38 + 0.07 * Math.sin(t * 0.7);
-      const wander = 0.05 * Math.sin(t * 2.1) * Math.sin(t * 0.37 + 1.2);
-      return [clamp01(base + wander), clamp01(0.48 + 0.12 * Math.sin(t * 1.05 + 0.6))];
+      const base = 0.38 + 0.07 * Math.sin(t * 0.7)
+      const wander = 0.05 * Math.sin(t * 2.1) * Math.sin(t * 0.37 + 1.2)
+      return [
+        clamp01(base + wander),
+        clamp01(0.48 + 0.12 * Math.sin(t * 1.05 + 0.6)),
+      ]
     }
   }
 }
@@ -105,7 +114,7 @@ function targetVolumes(state: OrbState, t: number): [number, number] {
 const VERT = `
 attribute vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
-`;
+`
 
 /**
  * Prelude prepended to every orb fragment shader: uniforms, value noise, fbm,
@@ -151,13 +160,13 @@ vec3 tanh3(vec3 x) {
   return (e - 1.0) / (e + 1.0);
 }
 
-`;
+`
 
 function paramUniformDecls(variant: OrbVariant): string {
   return [
     ...variant.params.map((p) => `uniform float uP_${p.key};`),
-    ...variant.colors.map((c) => `uniform vec3 uC_${c.key};`)
-  ].join("\n");
+    ...variant.colors.map((c) => `uniform vec3 uC_${c.key};`),
+  ].join("\n")
 }
 
 /* ------------------------------- engine ------------------------------------ */
@@ -171,29 +180,36 @@ function paramUniformDecls(variant: OrbVariant): string {
  */
 interface CanvasContextController {
   /** Whether a mounted orb currently wants this context alive. */
-  desired: boolean;
+  desired: boolean
   /** Builds a render generation; returns its teardown. Rebound per effect run. */
-  start: (() => () => void) | null;
+  start: (() => () => void) | null
   /** Teardown of the live generation, if one is running. */
-  stopGen: (() => void) | null;
+  stopGen: (() => void) | null
 }
 
-const canvasControllers = new WeakMap<HTMLCanvasElement, CanvasContextController>();
+const canvasControllers = new WeakMap<
+  HTMLCanvasElement,
+  CanvasContextController
+>()
 
 function ensureCanvasController(
   canvas: HTMLCanvasElement,
   loseExt: { restoreContext(): void } | null
 ): CanvasContextController {
-  const existing = canvasControllers.get(canvas);
+  const existing = canvasControllers.get(canvas)
   if (existing) {
-    return existing;
+    return existing
   }
 
-  const created: CanvasContextController = { desired: false, start: null, stopGen: null };
+  const created: CanvasContextController = {
+    desired: false,
+    start: null,
+    stopGen: null,
+  }
   canvas.addEventListener("webglcontextlost", (event) => {
-    event.preventDefault(); // always cancel — keeps the context restorable
-    created.stopGen?.();
-    created.stopGen = null;
+    event.preventDefault() // always cancel — keeps the context restorable
+    created.stopGen?.()
+    created.stopGen = null
     if (created.desired) {
       /*
         Ask for the context back — but in a LATER task. The browser only
@@ -207,35 +223,39 @@ function ensureCanvasController(
         lets the browser restore on its own schedule.
       */
       setTimeout(() => {
-        if (!created.desired) return;
+        if (!created.desired) return
         try {
-          loseExt?.restoreContext();
+          loseExt?.restoreContext()
         } catch {
           // Natural loss — restoration is the browser's call now.
         }
-      }, 0);
+      }, 0)
     }
-  });
+  })
   canvas.addEventListener("webglcontextrestored", () => {
     if (created.desired && created.start) {
-      created.stopGen = created.start();
+      created.stopGen = created.start()
     }
-  });
-  canvasControllers.set(canvas, created);
-  return created;
+  })
+  canvasControllers.set(canvas, created)
+  return created
 }
 
-function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLShader | null {
-  const shader = gl.createShader(type);
-  if (!shader) return null;
-  gl.shaderSource(shader, src);
-  gl.compileShader(shader);
+function compile(
+  gl: WebGLRenderingContext,
+  type: number,
+  src: string
+): WebGLShader | null {
+  const shader = gl.createShader(type)
+  if (!shader) return null
+  gl.shaderSource(shader, src)
+  gl.compileShader(shader)
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error("[orbkit] shader compile error:", gl.getShaderInfoLog(shader));
-    gl.deleteShader(shader);
-    return null;
+    console.error("[orbkit] shader compile error:", gl.getShaderInfoLog(shader))
+    gl.deleteShader(shader)
+    return null
   }
-  return shader;
+  return shader
 }
 
 /* ----------------------------------------------------------------------------
@@ -274,14 +294,14 @@ function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLSha
   loop), and a ring that keeps spinning around a frozen orb would be the worse
   half of the two still moving.
 */
-const WRAPPER_STYLE_HREF = "orbkit-wrapper";
+const WRAPPER_STYLE_HREF = "orbkit-wrapper"
 const WRAPPER_CSS = `
 @keyframes orbkit-w-spin { to { transform: rotate(360deg); } }
 @keyframes orbkit-w-roll { from { transform: translateY(-110%); } to { transform: translateY(360%); } }
 @media (prefers-reduced-motion: reduce) {
   .orbkit-w-anim { animation: none !important; }
 }
-`;
+`
 
 interface WrapperSpec {
   /**
@@ -292,35 +312,35 @@ interface WrapperSpec {
    * intrinsic size and the over-constrained edge is dropped. The orb would
    * then be drawn into a canvas the size of the page.
    */
-  inset: number;
+  inset: number
   /**
    * Soft circular mask on the canvas. Only the wrappers that read as a
    * CONTAINER set one — a bubble has to hold the orb, whereas a bezel sits
    * beside it and clipping the halo there would just amputate the glow.
    */
-  mask?: string;
+  mask?: string
   /** Cast by the assembly as a whole, on the outer box. */
-  shadow?: string;
+  shadow?: string
 
   /** True when the spec uses one of the keyframes above. */
-  animated?: boolean;
+  animated?: boolean
   /** Painted beneath the canvas. */
-  under?: ReactNode;
+  under?: ReactNode
   /** Painted over it. */
-  over?: ReactNode;
+  over?: ReactNode
 }
 
-const DISC: CSSProperties = { borderRadius: "50%" };
+const DISC: CSSProperties = { borderRadius: "50%" }
 
 /** One absolutely-positioned decoration layer, filling the wrapper box. */
 function Layer({
   inset = 0,
   style,
-  className
+  className,
 }: {
-  inset?: number | string;
-  style: CSSProperties;
-  className?: string;
+  inset?: number | string
+  style: CSSProperties
+  className?: string
 }) {
   return (
     <span
@@ -328,7 +348,7 @@ function Layer({
       className={className}
       style={{ position: "absolute", inset, pointerEvents: "none", ...style }}
     />
-  );
+  )
 }
 
 /**
@@ -343,9 +363,14 @@ function Highlight({ style }: { style: CSSProperties }) {
   return (
     <span
       aria-hidden="true"
-      style={{ position: "absolute", borderRadius: "50%", pointerEvents: "none", ...style }}
+      style={{
+        position: "absolute",
+        borderRadius: "50%",
+        pointerEvents: "none",
+        ...style,
+      }}
     />
-  );
+  )
 }
 
 /**
@@ -361,19 +386,19 @@ function Highlight({ style }: { style: CSSProperties }) {
  * The gap is real pixels rather than a share of the size: it reads as the same
  * band at 120px and at 900px, which a percentage would not.
  */
-const RIM_GAP_PX = 4;
+const RIM_GAP_PX = 4
 
 function rimMask(inset: number): string {
-  const rim = (100 / (1 - (2 * inset) / 100)).toFixed(2);
+  const rim = (100 / (1 - (2 * inset) / 100)).toFixed(2)
   // Feathered over the final pixel, so the cut is not a razor edge.
-  const solid = RIM_GAP_PX + 0.5;
-  const clear = RIM_GAP_PX - 0.5;
-  return `radial-gradient(circle closest-side, #000 calc(${rim}% - ${solid}px), rgba(0,0,0,0) calc(${rim}% - ${clear}px))`;
+  const solid = RIM_GAP_PX + 0.5
+  const clear = RIM_GAP_PX - 0.5
+  return `radial-gradient(circle closest-side, #000 calc(${rim}% - ${solid}px), rgba(0,0,0,0) calc(${rim}% - ${clear}px))`
 }
 
 /** Both spellings, since Safari still wants the prefix for mask-image. */
 function masked(image: string): CSSProperties {
-  return { WebkitMaskImage: image, maskImage: image };
+  return { WebkitMaskImage: image, maskImage: image }
 }
 
 const svgLayer: CSSProperties = {
@@ -382,11 +407,11 @@ const svgLayer: CSSProperties = {
   width: "100%",
   height: "100%",
   pointerEvents: "none",
-  overflow: "visible"
-};
+  overflow: "visible",
+}
 
 /** Glass's overfill, shared by its inset and the mask derived from it. */
-const GLASS_INSET = -4;
+const GLASS_INSET = -4
 
 const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
   /*
@@ -420,7 +445,7 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
           style={{
             ...DISC,
             background:
-              "radial-gradient(ellipse 80% 70% at 28% 20%, rgba(255,255,255,0.16), rgba(255,255,255,0.03) 45%, rgba(255,255,255,0) 72%)"
+              "radial-gradient(ellipse 80% 70% at 28% 20%, rgba(255,255,255,0.16), rgba(255,255,255,0.03) 45%, rgba(255,255,255,0) 72%)",
           }}
         />
         <Layer
@@ -428,13 +453,13 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
             ...DISC,
             background:
               "radial-gradient(circle closest-side, rgba(255,255,255,0) 0%, rgba(255,255,255,0.0) 55%, rgba(255,255,255,0.05) 99.5%, rgba(255,255,255,0) 100%)",
-              overflow: 'hidden'
+            overflow: "hidden",
           }}
         />
         <Layer
           style={{
             ...DISC,
-           boxShadow: '3px 6px 10px #ffffff20 inset'
+            boxShadow: "3px 6px 10px #ffffff20 inset",
           }}
         />
         {/*
@@ -447,14 +472,14 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
           style={{
             ...DISC,
             background:
-              "radial-gradient(circle closest-side, rgba(0,0,0,0) 78%, rgba(0,0,0,0.05) 93%, rgba(0,0,0,0.02) 100%)"
+              "radial-gradient(circle closest-side, rgba(0,0,0,0) 78%, rgba(0,0,0,0.05) 93%, rgba(0,0,0,0.02) 100%)",
           }}
         />
         <Layer
           style={{
             ...DISC,
             boxShadow:
-              "inset 0 6px 12px -7px rgba(255,255,255,0.05), inset 0 -9px 16px -9px rgba(255,255,255,0.1), 0 0 0 1px rgba(0,0,0,0.07)"
+              "inset 0 6px 12px -7px rgba(255,255,255,0.05), inset 0 -9px 16px -9px rgba(255,255,255,0.1), 0 0 0 1px rgba(0,0,0,0.07)",
           }}
         />
         <Highlight
@@ -466,12 +491,11 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
             transform: "rotate(-25deg)",
             background:
               "radial-gradient(closest-side, rgba(255,255,255,0.9), rgba(255,255,255,0.3) 55%, rgba(255,255,255,0) 100%)",
-              filter: 'blur(10px)'
+            filter: "blur(10px)",
           }}
         />
-       
       </>
-    )
+    ),
   },
 
   /* ring — two hairlines and nothing else. The restrained one. */
@@ -479,10 +503,15 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
     inset: 9,
     over: (
       <>
-        <Layer style={{ ...DISC, border: "1px solid currentColor", opacity: 0.22 }} />
-        <Layer inset="5%" style={{ ...DISC, border: "1px solid currentColor", opacity: 0.1 }} />
+        <Layer
+          style={{ ...DISC, border: "1px solid currentColor", opacity: 0.22 }}
+        />
+        <Layer
+          inset="5%"
+          style={{ ...DISC, border: "1px solid currentColor", opacity: 0.1 }}
+        />
       </>
-    )
+    ),
   },
 
   /*
@@ -517,7 +546,7 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
           opacity={0.45}
         />
       </svg>
-    )
+    ),
   },
 
   /*
@@ -538,7 +567,7 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
               "repeating-conic-gradient(from -0.5deg, transparent 0deg 0.2deg, currentColor 0.4deg 0.6deg, transparent 0.8deg 6deg)",
             ...masked(
               "radial-gradient(circle closest-side, transparent 88%, #000 90%, #000 97%, transparent 99%)"
-            )
+            ),
           }}
         />
         <Layer
@@ -549,12 +578,14 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
               "repeating-conic-gradient(from -0.75deg, transparent 0deg 0.25deg, currentColor 0.5deg 1deg, transparent 1.25deg 30deg)",
             ...masked(
               "radial-gradient(circle closest-side, transparent 80%, #000 82%, #000 97%, transparent 99%)"
-            )
+            ),
           }}
         />
-        <Layer style={{ ...DISC, border: "1px solid currentColor", opacity: 0.12 }} />
+        <Layer
+          style={{ ...DISC, border: "1px solid currentColor", opacity: 0.12 }}
+        />
       </>
-    )
+    ),
   },
 
   /* reticle — viewfinder furniture: corner brackets, cardinal ticks, a track. */
@@ -584,7 +615,7 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
           opacity="0.22"
         />
       </svg>
-    )
+    ),
   },
 
   /*
@@ -609,11 +640,17 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
           opacity: 0.18,
           backgroundImage:
             "repeating-linear-gradient(to right, currentColor 0 1px, transparent 1px 12.5%), repeating-linear-gradient(to bottom, currentColor 0 1px, transparent 1px 12.5%)",
-          ...masked("radial-gradient(circle closest-side, #000 86%, rgba(0,0,0,0) 99%)")
+          ...masked(
+            "radial-gradient(circle closest-side, #000 86%, rgba(0,0,0,0) 99%)"
+          ),
         }}
       />
     ),
-    over: <Layer style={{ ...DISC, border: "1px solid currentColor", opacity: 0.2 }} />
+    over: (
+      <Layer
+        style={{ ...DISC, border: "1px solid currentColor", opacity: 0.2 }}
+      />
+    ),
   },
 
   /*
@@ -632,10 +669,10 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
           backgroundSize: "7px 7px",
           ...masked(
             "radial-gradient(circle closest-side, transparent 40%, #000 80%, #000 94%, rgba(0,0,0,0) 100%)"
-          )
+          ),
         }}
       />
-    )
+    ),
   },
 
   /*
@@ -654,7 +691,9 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
             ...DISC,
             backgroundImage:
               "repeating-linear-gradient(to bottom, rgba(0,0,0,0.45) 0 1px, rgba(0,0,0,0) 1px 3px)",
-            ...masked("radial-gradient(circle closest-side, #000 84%, rgba(0,0,0,0) 100%)")
+            ...masked(
+              "radial-gradient(circle closest-side, #000 84%, rgba(0,0,0,0) 100%)"
+            ),
           }}
         />
         <span
@@ -664,7 +703,7 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
             inset: 0,
             borderRadius: "50%",
             overflow: "hidden",
-            pointerEvents: "none"
+            pointerEvents: "none",
           }}
         >
           <span
@@ -677,27 +716,29 @@ const WRAPPER_SPECS: Record<Exclude<OrbWrapper, "none">, WrapperSpec> = {
               height: "30%",
               background:
                 "linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0) 100%)",
-              animation: "orbkit-w-roll 7s linear infinite"
+              animation: "orbkit-w-roll 7s linear infinite",
             }}
           />
         </span>
-        <Layer style={{ ...DISC, boxShadow: "inset 0 0 40px -8px rgba(0,0,0,0.5)" }} />
+        <Layer
+          style={{ ...DISC, boxShadow: "inset 0 0 40px -8px rgba(0,0,0,0.5)" }}
+        />
       </>
-    )
-  }
-};
+    ),
+  },
+}
 
 export interface ShaderOrbProps {
   /** The orb definition: shader + param schema + state presets. */
-  variant: OrbVariant;
+  variant: OrbVariant
   /** Drives the synthesized volume signals. Defaults to `"idle"`. */
-  state?: OrbState;
+  state?: OrbState
   /** Rendered size in CSS pixels. Ignored when `className` sizes the canvas. */
-  size?: number;
+  size?: number
   /** Explicit param overrides. Any key present here wins over the state preset. */
-  params?: OrbParamValues;
+  params?: OrbParamValues
   /** Explicit color overrides, as hex strings. */
-  colors?: OrbColorValues;
+  colors?: OrbColorValues
   /**
    * Per-state parameter targets, overriding the variant's own. Merged KEY BY
    * KEY over what the orb already defines, so `{ thinking: { churn: 1.62 } }`
@@ -709,15 +750,15 @@ export interface ShaderOrbProps {
    * glide, so switching states cross-fades into your targets. An explicit
    * `params` value outranks this, the same way it outranks the variant.
    */
-  statePresets?: Partial<Record<OrbState, Record<string, number>>>;
+  statePresets?: Partial<Record<OrbState, Record<string, number>>>
   /** The colour counterpart of `statePresets`, merged the same key-by-key way. */
-  stateColors?: Partial<Record<OrbState, Record<string, string>>>;
+  stateColors?: Partial<Record<OrbState, Record<string, string>>>
   /**
    * Per-state volume drive, the third member of the same family. Use it to
    * give each state its own energy; use `volumes` below instead when you have
    * a real signal to feed in, such as live mic level.
    */
-  stateVolumes?: Partial<Record<OrbState, { input?: number; output?: number }>>;
+  stateVolumes?: Partial<Record<OrbState, { input?: number; output?: number }>>
   /**
    * Overrides the synthesized volume signals for the active state. The engine
    * normally derives these from `state` — a slow breath at idle, a restless
@@ -726,16 +767,16 @@ export interface ShaderOrbProps {
    * it instead, which is how the playground lets you dial each state's drive
    * independently. Omit a channel to keep its synthesized motion.
    */
-  volumes?: { input?: number; output?: number };
+  volumes?: { input?: number; output?: number }
   /** Freeze the animation on the current frame. */
-  paused?: boolean;
+  paused?: boolean
   /**
    * Stop rendering while the orb is scrolled out of view. Defaults to `true` —
    * a page full of orbs would otherwise run a WebGL loop per card.
    */
-  pauseOffscreen?: boolean;
+  pauseOffscreen?: boolean
   /** Device-pixel-ratio ceiling. Defaults to `2`. */
-  maxDpr?: number;
+  maxDpr?: number
   /**
    * Decoration drawn around the orb — a glass bubble, a dotted bezel, a
    * viewfinder. Defaults to `"none"`, which renders the bare canvas exactly as
@@ -745,20 +786,20 @@ export interface ShaderOrbProps {
    * diameter and the canvas is inset inside it, so switching one on reflows
    * nothing around it.
    */
-  wrapper?: OrbWrapper;
+  wrapper?: OrbWrapper
   /**
    * The colour a wrapper draws its lines and dots in. Defaults to
    * `currentColor` — the inherited text colour — which is what makes the
    * bezels legible on a light and a dark page without being told which one
    * they are on. `glass` ignores it: glass has no colour of its own.
    */
-  wrapperColor?: string;
+  wrapperColor?: string
   /** Applied to the outermost element — the wrapper when there is one. */
-  className?: string;
+  className?: string
   /** Merged onto the outermost element's style. */
-  style?: CSSProperties;
+  style?: CSSProperties
   /** Accessible label. When omitted the orb is hidden from assistive tech. */
-  ariaLabel?: string;
+  ariaLabel?: string
 }
 
 function useShaderOrbEngine({
@@ -773,7 +814,7 @@ function useShaderOrbEngine({
   paused = false,
   pauseOffscreen = true,
   maxDpr = 2,
-  wrapped
+  wrapped,
 }: Pick<
   ShaderOrbProps,
   | "variant"
@@ -788,7 +829,7 @@ function useShaderOrbEngine({
   | "pauseOffscreen"
   | "maxDpr"
 > & { wrapped: boolean }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Live refs: the render loop reads these every frame, so changing a param
   // never re-runs the GL setup effect (which would drop the context). Synced in
@@ -809,32 +850,41 @@ function useShaderOrbEngine({
     until its own first frame lands is what makes the grid fade in cleanly
     instead of flashing. One state change per orb, once, on mount.
   */
-  const [paintedKey, setPaintedKey] = useState<string | null>(null);
-  const painted = paintedKey === variant.key;
+  const [paintedKey, setPaintedKey] = useState<string | null>(null)
+  const painted = paintedKey === variant.key
 
-  const stateRef = useRef<OrbState>(state);
-  const paramsRef = useRef<OrbParamValues | undefined>(params);
-  const colorsRef = useRef<OrbColorValues | undefined>(colors);
-  const statePresetsRef = useRef(statePresets);
-  const stateColorsRef = useRef(stateColors);
-  const stateVolumesRef = useRef(stateVolumes);
-  const volumesRef = useRef(volumes);
-  const pausedRef = useRef(paused);
-
-  useEffect(() => {
-    stateRef.current = state;
-    paramsRef.current = params;
-    colorsRef.current = colors;
-    statePresetsRef.current = statePresets;
-    stateColorsRef.current = stateColors;
-    stateVolumesRef.current = stateVolumes;
-    volumesRef.current = volumes;
-    pausedRef.current = paused;
-  }, [state, params, colors, statePresets, stateColors, stateVolumes, volumes, paused]);
+  const stateRef = useRef<OrbState>(state)
+  const paramsRef = useRef<OrbParamValues | undefined>(params)
+  const colorsRef = useRef<OrbColorValues | undefined>(colors)
+  const statePresetsRef = useRef(statePresets)
+  const stateColorsRef = useRef(stateColors)
+  const stateVolumesRef = useRef(stateVolumes)
+  const volumesRef = useRef(volumes)
+  const pausedRef = useRef(paused)
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    stateRef.current = state
+    paramsRef.current = params
+    colorsRef.current = colors
+    statePresetsRef.current = statePresets
+    stateColorsRef.current = stateColors
+    stateVolumesRef.current = stateVolumes
+    volumesRef.current = volumes
+    pausedRef.current = paused
+  }, [
+    state,
+    params,
+    colors,
+    statePresets,
+    stateColors,
+    stateVolumes,
+    volumes,
+    paused,
+  ])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
 
     const gl = canvas.getContext("webgl", {
       alpha: true,
@@ -842,41 +892,41 @@ function useShaderOrbEngine({
       // primitive edges to antialias — softness comes from the shaders. Leaving
       // it on costs the multisample buffers plus a resolve every frame.
       antialias: false,
-      premultipliedAlpha: true
-    });
-    if (!gl) return;
+      premultipliedAlpha: true,
+    })
+    if (!gl) return
 
-    const loseExt = gl.getExtension("WEBGL_lose_context");
-    let frameId = 0;
+    const loseExt = gl.getExtension("WEBGL_lose_context")
+    let frameId = 0
     const view = {
       visible: !pauseOffscreen,
       last: 0,
-      resize: () => {}
-    };
+      resize: () => {},
+    }
     const resizeObserver =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(() => {
-            view.resize();
+            view.resize()
           })
-        : null;
-    resizeObserver?.observe(canvas);
+        : null
+    resizeObserver?.observe(canvas)
 
     const intersectionObserver =
       pauseOffscreen && typeof IntersectionObserver !== "undefined"
         ? new IntersectionObserver(
             (entries) => {
-              view.visible = Boolean(entries[0]?.isIntersecting);
+              view.visible = Boolean(entries[0]?.isIntersecting)
               if (view.visible) {
-                view.last = performance.now() / 1000;
+                view.last = performance.now() / 1000
               }
             },
             { rootMargin: "150px 0px", threshold: 0 }
           )
-        : null;
+        : null
     if (intersectionObserver) {
-      intersectionObserver.observe(canvas);
+      intersectionObserver.observe(canvas)
     } else {
-      view.visible = true;
+      view.visible = true
     }
 
     /*
@@ -886,77 +936,84 @@ function useShaderOrbEngine({
       forever unless the app rebuilds — so generations tear down and rebuild on
       the lost/restored events instead of assuming the context is immortal.
     */
-    let announcedPaint = false;
+    let announcedPaint = false
 
     const startGeneration = (): (() => void) => {
-      if (gl.isContextLost()) return () => {};
+      if (gl.isContextLost()) return () => {}
       // Every generation announces its own first frame: a context that was
       // lost and restored has an empty drawing buffer and is hidden again
       // (below), so it has to earn its reveal back.
-      announcedPaint = false;
+      announcedPaint = false
 
-      const vs = compile(gl, gl.VERTEX_SHADER, VERT);
+      const vs = compile(gl, gl.VERTEX_SHADER, VERT)
       const fs = compile(
         gl,
         gl.FRAGMENT_SHADER,
         ORB_GLSL_HELPERS + paramUniformDecls(variant) + variant.frag
-      );
+      )
       const releaseShaders = () => {
-        if (vs) gl.deleteShader(vs);
-        if (fs) gl.deleteShader(fs);
-      };
-      if (!vs || !fs) return releaseShaders;
-
-      const prog = gl.createProgram();
-      if (!prog) return releaseShaders;
-      gl.attachShader(prog, vs);
-      gl.attachShader(prog, fs);
-      gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-        console.error("[orbkit] program link error:", gl.getProgramInfoLog(prog));
-        gl.deleteProgram(prog);
-        return releaseShaders;
+        if (vs) gl.deleteShader(vs)
+        if (fs) gl.deleteShader(fs)
       }
-      gl.useProgram(prog);
+      if (!vs || !fs) return releaseShaders
 
-      const buf = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-      const aPos = gl.getAttribLocation(prog, "aPos");
-      gl.enableVertexAttribArray(aPos);
-      gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+      const prog = gl.createProgram()
+      if (!prog) return releaseShaders
+      gl.attachShader(prog, vs)
+      gl.attachShader(prog, fs)
+      gl.linkProgram(prog)
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        console.error(
+          "[orbkit] program link error:",
+          gl.getProgramInfoLog(prog)
+        )
+        gl.deleteProgram(prog)
+        return releaseShaders
+      }
+      gl.useProgram(prog)
 
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      const buf = gl.createBuffer()
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 3, -1, -1, 3]),
+        gl.STATIC_DRAW
+      )
+      const aPos = gl.getAttribLocation(prog, "aPos")
+      gl.enableVertexAttribArray(aPos)
+      gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0)
 
-      const uRes = gl.getUniformLocation(prog, "uRes");
-      const uTime = gl.getUniformLocation(prog, "uTime");
-      const uAnim = gl.getUniformLocation(prog, "uAnim");
-      const uInput = gl.getUniformLocation(prog, "uInput");
-      const uOutput = gl.getUniformLocation(prog, "uOutput");
+      gl.enable(gl.BLEND)
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+
+      const uRes = gl.getUniformLocation(prog, "uRes")
+      const uTime = gl.getUniformLocation(prog, "uTime")
+      const uAnim = gl.getUniformLocation(prog, "uAnim")
+      const uInput = gl.getUniformLocation(prog, "uInput")
+      const uOutput = gl.getUniformLocation(prog, "uOutput")
 
       const paramLocs = variant.params.map((p) => ({
         def: p,
-        loc: gl.getUniformLocation(prog, `uP_${p.key}`)
-      }));
+        loc: gl.getUniformLocation(prog, `uP_${p.key}`),
+      }))
       const colorLocs = variant.colors.map((c) => ({
         def: c,
-        loc: gl.getUniformLocation(prog, `uC_${c.key}`)
-      }));
+        loc: gl.getUniformLocation(prog, `uC_${c.key}`),
+      }))
 
       /* --- sizing: track the element box, not a one-shot measurement ------- */
       // Backing-store scale, stepped down by the adaptive-resolution logic in
       // the loop when the GPU can't hold frame rate. CSS size never changes —
       // the browser upscales, which these soft shaders absorb gracefully.
-      let resScale = 1;
+      let resScale = 1
       const resize = () => {
-        const dpr = Math.min(window.devicePixelRatio || 1, maxDpr) * resScale;
-        const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
-        const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+        const dpr = Math.min(window.devicePixelRatio || 1, maxDpr) * resScale
+        const w = Math.max(1, Math.round(canvas.clientWidth * dpr))
+        const h = Math.max(1, Math.round(canvas.clientHeight * dpr))
         if (canvas.width !== w || canvas.height !== h) {
-          canvas.width = w;
-          canvas.height = h;
-          gl.viewport(0, 0, w, h);
+          canvas.width = w
+          canvas.height = h
+          gl.viewport(0, 0, w, h)
         }
         /*
           Uploaded UNCONDITIONALLY, outside the size guard. A rebuilt
@@ -967,50 +1024,50 @@ function useShaderOrbEngine({
           every fragment lands transparent: a healthy context, a bound
           program, and a permanently blank orb.
         */
-        gl.uniform2f(uRes, w, h);
-      };
-      view.resize = resize;
-      resize();
+        gl.uniform2f(uRes, w, h)
+      }
+      view.resize = resize
+      resize()
 
       const reduceMotion =
         typeof window.matchMedia === "function" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
 
       /* --- driver state ---------------------------------------------------- */
-      let tSec = 0;
+      let tSec = 0
       // random phase so two orbs on the same page never look synchronized
-      let anim = Math.random() * 100;
-      let speed = 0.1;
-      const cur = { in: 0, out: 0.3 };
-      const presets = variant.statePresets;
-      const paramCur: Record<string, number> = {};
-      const paramVel: Record<string, number> = {};
-      const paramClocks: Record<string, number> = {};
-      const colorCur: Record<string, [number, number, number]> = {};
-      const colorVel: Record<string, [number, number, number]> = {};
-      let speedVel = 0;
-      const [initialIn, initialOut] = targetVolumes(stateRef.current, 0);
-      cur.in = initialIn;
-      cur.out = initialOut;
-      view.last = performance.now() / 1000;
-      frameId = 0;
+      let anim = Math.random() * 100
+      let speed = 0.1
+      const cur = { in: 0, out: 0.3 }
+      const presets = variant.statePresets
+      const paramCur: Record<string, number> = {}
+      const paramVel: Record<string, number> = {}
+      const paramClocks: Record<string, number> = {}
+      const colorCur: Record<string, [number, number, number]> = {}
+      const colorVel: Record<string, [number, number, number]> = {}
+      let speedVel = 0
+      const [initialIn, initialOut] = targetVolumes(stateRef.current, 0)
+      cur.in = initialIn
+      cur.out = initialOut
+      view.last = performance.now() / 1000
+      frameId = 0
       // smoothed frame time for the adaptive-resolution check
-      let frameEma = 1 / 60;
+      let frameEma = 1 / 60
 
       const uploadAndDraw = (dt: number, snap = false) => {
         // Synthesized from the state, unless a channel is pinned via
         // `volumes`. Pinned values still glide on the same easing, so dialing
         // one in the playground cross-fades rather than jumping.
-        const [tin, tout] = targetVolumes(stateRef.current, tSec);
+        const [tin, tout] = targetVolumes(stateRef.current, tSec)
         // Same order as params and colours: direct prop, then the per-state
         // map, then the engine's own synthesis.
-        const liveVolumes = volumesRef.current;
-        const stateVolume = stateVolumesRef.current?.[stateRef.current];
-        const targetIn = liveVolumes?.input ?? stateVolume?.input ?? tin;
-        const targetOut = liveVolumes?.output ?? stateVolume?.output ?? tout;
-        const kVol = 1 - Math.exp(-dt * 12);
-        cur.in += (targetIn - cur.in) * kVol;
-        cur.out += (targetOut - cur.out) * kVol;
+        const liveVolumes = volumesRef.current
+        const stateVolume = stateVolumesRef.current?.[stateRef.current]
+        const targetIn = liveVolumes?.input ?? stateVolume?.input ?? tin
+        const targetOut = liveVolumes?.output ?? stateVolume?.output ?? tout
+        const kVol = 1 - Math.exp(-dt * 12)
+        cur.in += (targetIn - cur.in) * kVol
+        cur.out += (targetOut - cur.out) * kVol
 
         /*
           Flow speed follows the output volume. It multiplies every integrated
@@ -1024,95 +1081,102 @@ function useShaderOrbEngine({
           speaking orb still flows faster than an idle one; only the transition
           into that rate is gradual.
         */
-        const targetSpeed = 0.1 + (1 - Math.pow(cur.out - 1, 2)) * 0.9;
+        const targetSpeed = 0.1 + (1 - Math.pow(cur.out - 1, 2)) * 0.9
         if (snap) {
-          speed = targetSpeed;
-          speedVel = 0;
+          speed = targetSpeed
+          speedVel = 0
         } else {
-          springStep(speed, speedVel, targetSpeed, dt, PARAM_EASE);
-          speed = springOut.x;
-          speedVel = springOut.v;
+          springStep(speed, speedVel, targetSpeed, dt, PARAM_EASE)
+          speed = springOut.x
+          speedVel = springOut.v
         }
-        anim += dt * speed;
+        anim += dt * speed
 
-        gl.uniform1f(uTime, tSec * 0.5);
-        gl.uniform1f(uAnim, anim);
-        gl.uniform1f(uInput, cur.in);
-        gl.uniform1f(uOutput, cur.out);
+        gl.uniform1f(uTime, tSec * 0.5)
+        gl.uniform1f(uAnim, anim)
+        gl.uniform1f(uInput, cur.in)
+        gl.uniform1f(uOutput, cur.out)
 
         // Resolution order per param: explicit `params` → `statePresets`
         // prop → the variant's own preset → schema default. The two middle
         // steps are per-key, so overriding one param of one state leaves the
         // rest of that state alone. Values glide rather than snap.
-        const liveParams = paramsRef.current;
-        const statePreset = presets?.[stateRef.current];
-        const overridePreset = statePresetsRef.current?.[stateRef.current];
+        const liveParams = paramsRef.current
+        const statePreset = presets?.[stateRef.current]
+        const overridePreset = statePresetsRef.current?.[stateRef.current]
 
         for (const { def, loc } of paramLocs) {
-          const explicit = liveParams?.[def.key];
+          const explicit = liveParams?.[def.key]
           const target =
             typeof explicit === "number"
               ? explicit
-              : (overridePreset?.[def.key] ?? statePreset?.[def.key] ?? def.default);
-          const curVal = paramCur[def.key] ?? target;
-          let next: number;
+              : (overridePreset?.[def.key] ??
+                statePreset?.[def.key] ??
+                def.default)
+          const curVal = paramCur[def.key] ?? target
+          let next: number
           if (snap) {
-            next = target;
-            paramVel[def.key] = 0;
+            next = target
+            paramVel[def.key] = 0
           } else {
-            springStep(curVal, paramVel[def.key] ?? 0, target, dt, PARAM_EASE);
-            next = springOut.x;
-            paramVel[def.key] = springOut.v;
+            springStep(curVal, paramVel[def.key] ?? 0, target, dt, PARAM_EASE)
+            next = springOut.x
+            paramVel[def.key] = springOut.v
           }
-          paramCur[def.key] = next;
+          paramCur[def.key] = next
 
           if (def.integrate) {
             const clock =
-              (paramClocks[def.key] ?? (paramClocks[def.key] = Math.random() * 100)) +
-              dt * speed * next;
-            paramClocks[def.key] = clock;
-            gl.uniform1f(loc, clock);
+              (paramClocks[def.key] ??
+                (paramClocks[def.key] = Math.random() * 100)) +
+              dt * speed * next
+            paramClocks[def.key] = clock
+            gl.uniform1f(loc, clock)
           } else {
-            gl.uniform1f(loc, next);
+            gl.uniform1f(loc, next)
           }
         }
 
         // Same resolution order and same easing as params, so a state change
         // cross-fades the palette instead of cutting to it.
-        const liveColors = colorsRef.current;
-        const stateColor = variant.stateColors?.[stateRef.current];
-        const overrideColor = stateColorsRef.current?.[stateRef.current];
+        const liveColors = colorsRef.current
+        const stateColor = variant.stateColors?.[stateRef.current]
+        const overrideColor = stateColorsRef.current?.[stateRef.current]
         for (const { def, loc } of colorLocs) {
           const target = hexToRgb(
             liveColors?.[def.key] ??
               overrideColor?.[def.key] ??
               stateColor?.[def.key] ??
               def.default
-          );
-          const curCol = (colorCur[def.key] ??= [...target] as [number, number, number]);
-          const velCol = (colorVel[def.key] ??= [0, 0, 0]);
+          )
+          const curCol = (colorCur[def.key] ??= [...target] as [
+            number,
+            number,
+            number,
+          ])
+          const velCol = (colorVel[def.key] ??= [0, 0, 0])
           for (let i = 0; i < 3; i++) {
             if (snap) {
-              curCol[i] = target[i];
-              velCol[i] = 0;
+              curCol[i] = target[i]
+              velCol[i] = 0
             } else {
-              springStep(curCol[i], velCol[i], target[i], dt, PARAM_EASE);
-              curCol[i] = springOut.x;
-              velCol[i] = springOut.v;
+              springStep(curCol[i], velCol[i], target[i], dt, PARAM_EASE)
+              curCol[i] = springOut.x
+              velCol[i] = springOut.v
             }
           }
-          gl.uniform3f(loc, curCol[0], curCol[1], curCol[2]);
+          gl.uniform3f(loc, curCol[0], curCol[1], curCol[2])
         }
 
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.clearColor(0, 0, 0, 0)
+        gl.clear(gl.COLOR_BUFFER_BIT)
+        gl.drawArrays(gl.TRIANGLES, 0, 3)
         // Deferred a microtask: the first of these draws runs synchronously
         // inside this effect, and a sync setState there trips the compiler
         // lint. A microtask still resolves before the browser paints, so the
         // reveal is not delayed by a frame.
         if (!announcedPaint) {
-          announcedPaint = true;
+          announcedPaint = true
           queueMicrotask(() => {
             /*
               Re-check: the context can be evicted between this draw and the
@@ -1123,34 +1187,34 @@ function useShaderOrbEngine({
               what the browser draws its broken-canvas placeholder over. The
               generation that follows the restore announces again.
             */
-            if (gl.isContextLost()) return;
-            setPaintedKey(variant.key);
-          });
+            if (gl.isContextLost()) return
+            setPaintedKey(variant.key)
+          })
         }
-      };
+      }
 
       const releaseGL = () => {
-        gl.deleteProgram(prog);
-        gl.deleteShader(vs);
-        gl.deleteShader(fs);
-        gl.deleteBuffer(buf);
-      };
+        gl.deleteProgram(prog)
+        gl.deleteShader(vs)
+        gl.deleteShader(fs)
+        gl.deleteBuffer(buf)
+      }
 
       if (reduceMotion) {
         // One representative frame, then stop — snapped straight onto the
         // state's targets, since a spring would only be part-way there.
-        tSec = 1;
-        uploadAndDraw(1, true);
-        return releaseGL;
+        tSec = 1
+        uploadAndDraw(1, true)
+        return releaseGL
       }
 
       const loop = () => {
-        frameId = requestAnimationFrame(loop);
-        const now = performance.now() / 1000;
-        const dt = Math.min(now - view.last, 0.05);
-        view.last = now;
-        if (!view.visible || pausedRef.current) return;
-        tSec += dt;
+        frameId = requestAnimationFrame(loop)
+        const now = performance.now() / 1000
+        const dt = Math.min(now - view.last, 0.05)
+        view.last = now
+        if (!view.visible || pausedRef.current) return
+        tSec += dt
 
         /*
           Adaptive resolution. When the smoothed frame time sits above ~30fps,
@@ -1167,12 +1231,12 @@ function useShaderOrbEngine({
           tab regaining focus — and feeding those in made UI jank look
           identical to a drowning GPU.
         */
-        if (dt < 0.05) frameEma += (dt - frameEma) * 0.08;
+        if (dt < 0.05) frameEma += (dt - frameEma) * 0.08
 
         if (tSec > 1.5 && frameEma > 1 / 34 && resScale > 0.5) {
-          resScale = Math.max(0.5, resScale * 0.8);
-          frameEma = 1 / 60; // require fresh evidence before the next step
-          resize();
+          resScale = Math.max(0.5, resScale * 0.8)
+          frameEma = 1 / 60 // require fresh evidence before the next step
+          resize()
         } else if (tSec > 1.5 && frameEma < 1 / 55 && resScale < 1) {
           /*
             And step back up once frames are comfortably fast again. This used
@@ -1183,13 +1247,13 @@ function useShaderOrbEngine({
             The gap between the two thresholds (29ms down, 18ms up) is the
             hysteresis that stops it hunting.
           */
-          resScale = Math.min(1, resScale / 0.8);
-          frameEma = 1 / 60;
-          resize();
+          resScale = Math.min(1, resScale / 0.8)
+          frameEma = 1 / 60
+          resize()
         }
 
-        uploadAndDraw(dt);
-      };
+        uploadAndDraw(dt)
+      }
       /*
         First frame synchronously, before entering the rAF loop. rAF does not
         run at all in hidden documents (background tabs, embedded previews),
@@ -1200,15 +1264,15 @@ function useShaderOrbEngine({
         dt = 1 lands the param glide on its targets, as in the reduce-motion
         frame above.
       */
-      uploadAndDraw(1);
-      loop();
+      uploadAndDraw(1)
+      loop()
 
       return () => {
-        cancelAnimationFrame(frameId);
-        frameId = 0;
-        releaseGL();
-      };
-    };
+        cancelAnimationFrame(frameId)
+        frameId = 0
+        releaseGL()
+      }
+    }
 
     /*
       Wire the canvas's lifecycle controller. The listeners are attached ONCE
@@ -1232,12 +1296,12 @@ function useShaderOrbEngine({
         what keeps React's own view in sync, so the reveal that follows a
         restore clears the inline value again rather than fighting it.
       */
-      canvas.style.opacity = "0";
-      setPaintedKey(null);
-    };
+      canvas.style.opacity = "0"
+      setPaintedKey(null)
+    }
 
-    const onContextLostHide = () => hideNow();
-    canvas.addEventListener("webglcontextlost", onContextLostHide);
+    const onContextLostHide = () => hideNow()
+    canvas.addEventListener("webglcontextlost", onContextLostHide)
 
     /*
       Hand the context back before the next document asks for one.
@@ -1251,31 +1315,31 @@ function useShaderOrbEngine({
       shown again untouched and must keep everything it holds.
     */
     const onPageHide = (event: PageTransitionEvent) => {
-      if (event.persisted) return;
+      if (event.persisted) return
       try {
-        loseExt?.loseContext();
+        loseExt?.loseContext()
       } catch {
         // Already released — nothing to hand back.
       }
-    };
-    window.addEventListener("pagehide", onPageHide);
+    }
+    window.addEventListener("pagehide", onPageHide)
 
-    const controller = ensureCanvasController(canvas, loseExt);
+    const controller = ensureCanvasController(canvas, loseExt)
 
-    controller.desired = true;
-    controller.start = startGeneration;
+    controller.desired = true
+    controller.start = startGeneration
     if (gl.isContextLost()) {
       // A previous run on this canvas released the context (effect re-run, or
       // the router re-showing a kept-alive page). If the lost event already
       // dispatched this request is honored now; if it is still queued, the
       // lost handler above re-requests it on dispatch.
       try {
-        loseExt?.restoreContext();
+        loseExt?.restoreContext()
       } catch {
         // No restore path — the orb stays blank rather than throwing.
       }
     } else {
-      controller.stopGen = startGeneration();
+      controller.stopGen = startGeneration()
     }
 
     return () => {
@@ -1291,17 +1355,17 @@ function useShaderOrbEngine({
         every time the drawer switches preview example (maxDpr differs on the
         layout one) or a wrapper is toggled.
       */
-      hideNow();
-      cancelAnimationFrame(frameId);
-      frameId = 0;
-      resizeObserver?.disconnect();
-      intersectionObserver?.disconnect();
-      canvas.removeEventListener("webglcontextlost", onContextLostHide);
-      window.removeEventListener("pagehide", onPageHide);
-      controller.desired = false;
-      controller.start = null;
-      controller.stopGen?.();
-      controller.stopGen = null;
+      hideNow()
+      cancelAnimationFrame(frameId)
+      frameId = 0
+      resizeObserver?.disconnect()
+      intersectionObserver?.disconnect()
+      canvas.removeEventListener("webglcontextlost", onContextLostHide)
+      window.removeEventListener("pagehide", onPageHide)
+      controller.desired = false
+      controller.start = null
+      controller.stopGen?.()
+      controller.stopGen = null
       /*
         Release the context NOW instead of when the canvas is garbage
         collected. Browsers cap live WebGL contexts per page (~8–16) and evict
@@ -1310,11 +1374,11 @@ function useShaderOrbEngine({
         freshly mounted orbs get evicted and render blank.
       */
       try {
-        loseExt?.loseContext();
+        loseExt?.loseContext()
       } catch {
         // Context already lost — nothing to release.
       }
-    };
+    }
     /*
       `wrapped` is in here because turning a wrapper on or off moves the canvas
       from being this component's root element to being a child of the wrapper
@@ -1324,9 +1388,9 @@ function useShaderOrbEngine({
       wrappers: the canvas keeps its slot among the decoration layers, so
       glass -> ring reuses the context instead of rebuilding it.
     */
-  }, [variant, pauseOffscreen, maxDpr, wrapped]);
+  }, [variant, pauseOffscreen, maxDpr, wrapped])
 
-  return { canvasRef, painted };
+  return { canvasRef, painted }
 }
 
 function ShaderOrbCanvas({
@@ -1337,16 +1401,16 @@ function ShaderOrbCanvas({
   style,
   sizeStyle,
   revealStyle,
-  ariaLabel
+  ariaLabel,
 }: {
-  canvasRef: RefObject<HTMLCanvasElement | null>;
-  variantKey: string;
-  spec: WrapperSpec | undefined;
-  className?: string;
-  style?: CSSProperties;
-  sizeStyle: CSSProperties;
-  revealStyle: CSSProperties;
-  ariaLabel?: string;
+  canvasRef: RefObject<HTMLCanvasElement | null>
+  variantKey: string
+  spec: WrapperSpec | undefined
+  className?: string
+  style?: CSSProperties
+  sizeStyle: CSSProperties
+  revealStyle: CSSProperties
+  ariaLabel?: string
 }) {
   return (
     <canvas
@@ -1364,7 +1428,7 @@ function ShaderOrbCanvas({
               width: `${100 - 2 * spec.inset}%`,
               height: `${100 - 2 * spec.inset}%`,
               ...revealStyle,
-              ...(spec.mask ? masked(spec.mask) : {})
+              ...(spec.mask ? masked(spec.mask) : {}),
             }
           : { display: "block", ...sizeStyle, ...revealStyle, ...style }
       }
@@ -1372,7 +1436,7 @@ function ShaderOrbCanvas({
       aria-label={spec ? undefined : ariaLabel}
       aria-hidden={!spec && ariaLabel ? undefined : true}
     />
-  );
+  )
 }
 
 function ShaderOrbFrame({
@@ -1382,15 +1446,15 @@ function ShaderOrbFrame({
   sizeStyle,
   wrapperColor,
   ariaLabel,
-  canvas
+  canvas,
 }: {
-  spec: WrapperSpec;
-  className?: string;
-  style?: CSSProperties;
-  sizeStyle: CSSProperties;
-  wrapperColor?: string;
-  ariaLabel?: string;
-  canvas: ReactNode;
+  spec: WrapperSpec
+  className?: string
+  style?: CSSProperties
+  sizeStyle: CSSProperties
+  wrapperColor?: string
+  ariaLabel?: string
+  canvas: ReactNode
 }) {
   /*
     Wrapped: the box becomes the orb's footprint and the canvas is absolutely
@@ -1412,7 +1476,7 @@ function ShaderOrbFrame({
         ...(spec.shadow ? { borderRadius: "50%", boxShadow: spec.shadow } : {}),
         ...sizeStyle,
         ...(wrapperColor ? { color: wrapperColor } : {}),
-        ...style
+        ...style,
       }}
       role={ariaLabel ? "img" : undefined}
       aria-label={ariaLabel}
@@ -1429,7 +1493,7 @@ function ShaderOrbFrame({
       {canvas}
       {spec.over}
     </div>
-  );
+  )
 }
 
 export function ShaderOrb({
@@ -1449,10 +1513,10 @@ export function ShaderOrb({
   wrapperColor,
   className,
   style,
-  ariaLabel
+  ariaLabel,
 }: ShaderOrbProps) {
-  const spec = wrapper === "none" ? undefined : WRAPPER_SPECS[wrapper];
-  const wrapped = spec !== undefined;
+  const spec = wrapper === "none" ? undefined : WRAPPER_SPECS[wrapper]
+  const wrapped = spec !== undefined
   const { canvasRef, painted } = useShaderOrbEngine({
     variant,
     state,
@@ -1465,11 +1529,11 @@ export function ShaderOrb({
     paused,
     pauseOffscreen,
     maxDpr,
-    wrapped
-  });
+    wrapped,
+  })
 
   const sizeStyle: CSSProperties =
-    size === undefined ? {} : { width: size, height: size };
+    size === undefined ? {} : { width: size, height: size }
 
   /*
     Spread ahead of the caller's `style`, so an orb that wants to own its own
@@ -1482,7 +1546,7 @@ export function ShaderOrb({
     cut is not a pop either way, since it happens on the frame the orb first
     has something to show.
   */
-  const revealStyle: CSSProperties = painted ? {} : { opacity: 0 };
+  const revealStyle: CSSProperties = painted ? {} : { opacity: 0 }
 
   const canvas = (
     <ShaderOrbCanvas
@@ -1495,9 +1559,9 @@ export function ShaderOrb({
       revealStyle={revealStyle}
       ariaLabel={ariaLabel}
     />
-  );
+  )
 
-  if (!spec) return canvas;
+  if (!spec) return canvas
 
   return (
     <ShaderOrbFrame
@@ -1509,5 +1573,5 @@ export function ShaderOrb({
       ariaLabel={ariaLabel}
       canvas={canvas}
     />
-  );
+  )
 }
