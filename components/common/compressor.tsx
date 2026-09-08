@@ -1,10 +1,10 @@
 "use client"
 
-import { CompressorDropZone } from "@/components/compressor-drop-zone"
-import { CompressorOrb } from "@/components/compressor-orb"
-import { CompressorQueue } from "@/components/compressor-queue"
-import { CompressorToolbar } from "@/components/compressor-toolbar"
-import { useCompressor } from "@/components/use-compressor"
+import { CompressorDropZone } from "@/components/common/compressor-drop-zone"
+import { CompressorOrb } from "@/components/common/compressor-orb"
+import { CompressorQueue } from "@/components/common/compressor-queue"
+import { CompressorToolbar } from "@/components/common/compressor-toolbar"
+import { useCompressor } from "@/hooks/use-compressor"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { OUTPUT_FORMATS } from "@/lib/formats"
 
