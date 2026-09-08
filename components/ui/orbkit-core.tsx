@@ -1,6 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject
+} from "react";
+
+import {
+  hexToRgb,
+  type OrbColorValues,
+  type OrbParamValues,
+  type OrbState,
+  type OrbVariant,
+  type OrbWrapper
+} from "@/components/ui/orbkit-model";
+
+export type {
+  OrbColorValues,
+  OrbParamValues,
+  OrbState,
+  OrbVariant,
+  OrbWrapper
+} from "@/components/ui/orbkit-model";
 
 /* ----------------------------------------------------------------------------
    Orbkit core — raw WebGL shader orb runtime. No dependencies.
@@ -16,10 +40,6 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
    shaders react to those. The flow clock's speed itself follows the output
    volume, so orbs visibly quicken when the agent is talking.
 ---------------------------------------------------------------------------- */
-
-export type OrbState = "idle" | "thinking" | "speaking";
-
-export const ORB_STATES = ["idle", "thinking", "speaking"] as const;
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
@@ -78,78 +98,6 @@ function targetVolumes(state: OrbState, t: number): [number, number] {
       return [clamp01(base + wander), clamp01(0.48 + 0.12 * Math.sin(t * 1.05 + 0.6))];
     }
   }
-}
-
-/* ------------------------------ param schema ------------------------------- */
-
-export interface OrbParamDef {
-  key: string;
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  default: number;
-  /**
-   * Rate params. The engine integrates them into a clock
-   * (`clock += dt * value * volumeSpeed`) and uploads the clock instead of the
-   * raw value, so changing the rate never jumps the phase — the motion speeds
-   * up or slows down rather than snapping to a new position.
-   */
-  integrate?: boolean;
-}
-
-export interface OrbColorDef {
-  key: string;
-  label: string;
-  /** hex, e.g. `#ff8b73` */
-  default: string;
-}
-
-export interface OrbVariant {
-  key: string;
-  label: string;
-  note: string;
-  /** GLSL fragment shader body. Uniform declarations are generated for you. */
-  frag: string;
-  params: OrbParamDef[];
-  colors: OrbColorDef[];
-  /**
-   * Per-state parameter targets. The engine glides each param toward the
-   * active state's preset. Params passed explicitly via the `params` prop
-   * always win over the preset.
-   */
-  statePresets?: Partial<Record<OrbState, Record<string, number>>>;
-  /**
-   * Per-state colour targets, the colour counterpart of `statePresets`.
-   * Kept a separate map because presets are numeric and colours are hex
-   * strings — a union would lose type safety on both. Colours glide in RGB
-   * on the same easing as params, so a state change cross-fades rather
-   * than cutting. Colours passed explicitly via the `colors` prop always
-   * win, exactly as with params.
-   */
-  stateColors?: Partial<Record<OrbState, Record<string, string>>>;
-}
-
-export type OrbParamValues = Partial<Record<string, number>>;
-export type OrbColorValues = Partial<Record<string, string>>;
-
-/** Every param and color at its schema default. */
-export function defaultValuesFor(variant: OrbVariant): {
-  params: Record<string, number>;
-  colors: Record<string, string>;
-} {
-  return {
-    params: Object.fromEntries(variant.params.map((p) => [p.key, p.default])),
-    colors: Object.fromEntries(variant.colors.map((c) => [c.key, c.default]))
-  };
-}
-
-export function hexToRgb(hex: string): [number, number, number] {
-  let h = hex.replace("#", "").trim();
-  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
-  const n = parseInt(h, 16);
-  if (h.length !== 6 || Number.isNaN(n)) return [1, 1, 1];
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
 /* ------------------------------- GLSL shared ------------------------------- */
@@ -232,6 +180,51 @@ interface CanvasContextController {
 
 const canvasControllers = new WeakMap<HTMLCanvasElement, CanvasContextController>();
 
+function ensureCanvasController(
+  canvas: HTMLCanvasElement,
+  loseExt: { restoreContext(): void } | null
+): CanvasContextController {
+  const existing = canvasControllers.get(canvas);
+  if (existing) {
+    return existing;
+  }
+
+  const created: CanvasContextController = { desired: false, start: null, stopGen: null };
+  canvas.addEventListener("webglcontextlost", (event) => {
+    event.preventDefault(); // always cancel — keeps the context restorable
+    created.stopGen?.();
+    created.stopGen = null;
+    if (created.desired) {
+      /*
+        Ask for the context back — but in a LATER task. The browser only
+        marks a loss as restorable once the lost event's dispatch has
+        completed and it has seen the canceled flag, so a restoreContext()
+        issued during dispatch (or before it, as the mount path may) is
+        silently refused. This is the path a synchronous cleanup+setup
+        pair hits — React re-running the effect on the same canvas loses
+        the context and wants it right back. For losses we didn't cause
+        (eviction, GPU reset) the call may refuse; the canceled event then
+        lets the browser restore on its own schedule.
+      */
+      setTimeout(() => {
+        if (!created.desired) return;
+        try {
+          loseExt?.restoreContext();
+        } catch {
+          // Natural loss — restoration is the browser's call now.
+        }
+      }, 0);
+    }
+  });
+  canvas.addEventListener("webglcontextrestored", () => {
+    if (created.desired && created.start) {
+      created.stopGen = created.start();
+    }
+  });
+  canvasControllers.set(canvas, created);
+  return created;
+}
+
 function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLShader | null {
   const shader = gl.createShader(type);
   if (!shader) return null;
@@ -267,21 +260,9 @@ function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLSha
    sets that colour when you want something other than the inherited one.
 ---------------------------------------------------------------------------- */
 
-export const ORB_WRAPPERS = [
-  "none",
-  "glass",
-  "ring",
-  "dotted",
-  "ticks",
-  "reticle",
-  "grid",
-  "halftone",
-  "scanlines"
-] as const;
-
-export type OrbWrapper = (typeof ORB_WRAPPERS)[number];
-
 /*
+
+
   Keyframes for the animated wrappers, shipped inside the component so an orb
   stays a single self-contained file with nothing to add to a global
   stylesheet. React 19 hoists a <style href precedence> into <head> and
@@ -780,10 +761,9 @@ export interface ShaderOrbProps {
   ariaLabel?: string;
 }
 
-export function ShaderOrb({
+function useShaderOrbEngine({
   variant,
   state = "idle",
-  size,
   params,
   colors,
   statePresets,
@@ -793,15 +773,22 @@ export function ShaderOrb({
   paused = false,
   pauseOffscreen = true,
   maxDpr = 2,
-  wrapper = "none",
-  wrapperColor,
-  className,
-  style,
-  ariaLabel
-}: ShaderOrbProps) {
+  wrapped
+}: Pick<
+  ShaderOrbProps,
+  | "variant"
+  | "state"
+  | "params"
+  | "colors"
+  | "statePresets"
+  | "stateColors"
+  | "stateVolumes"
+  | "volumes"
+  | "paused"
+  | "pauseOffscreen"
+  | "maxDpr"
+> & { wrapped: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const spec = wrapper === "none" ? undefined : WRAPPER_SPECS[wrapper];
-  const wrapped = spec !== undefined;
 
   // Live refs: the render loop reads these every frame, so changing a param
   // never re-runs the GL setup effect (which would drop the context). Synced in
@@ -860,6 +847,37 @@ export function ShaderOrb({
     if (!gl) return;
 
     const loseExt = gl.getExtension("WEBGL_lose_context");
+    let frameId = 0;
+    const view = {
+      visible: !pauseOffscreen,
+      last: 0,
+      resize: () => {}
+    };
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            view.resize();
+          })
+        : null;
+    resizeObserver?.observe(canvas);
+
+    const intersectionObserver =
+      pauseOffscreen && typeof IntersectionObserver !== "undefined"
+        ? new IntersectionObserver(
+            (entries) => {
+              view.visible = Boolean(entries[0]?.isIntersecting);
+              if (view.visible) {
+                view.last = performance.now() / 1000;
+              }
+            },
+            { rootMargin: "150px 0px", threshold: 0 }
+          )
+        : null;
+    if (intersectionObserver) {
+      intersectionObserver.observe(canvas);
+    } else {
+      view.visible = true;
+    }
 
     /*
       A "generation" is everything tied to a live context: program, buffers,
@@ -951,31 +969,8 @@ export function ShaderOrb({
         */
         gl.uniform2f(uRes, w, h);
       };
+      view.resize = resize;
       resize();
-
-      const resizeObserver =
-        typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
-      resizeObserver?.observe(canvas);
-
-      /* --- visibility: don't burn a render loop on an offscreen orb -------- */
-      let visible = !pauseOffscreen;
-      const intersectionObserver =
-        pauseOffscreen && typeof IntersectionObserver !== "undefined"
-          ? new IntersectionObserver(
-              (entries) => {
-                visible = Boolean(entries[0]?.isIntersecting);
-                if (visible) {
-                  last = performance.now() / 1000;
-                }
-              },
-              { rootMargin: "150px 0px", threshold: 0 }
-            )
-          : null;
-      if (intersectionObserver) {
-        intersectionObserver.observe(canvas);
-      } else {
-        visible = true;
-      }
 
       const reduceMotion =
         typeof window.matchMedia === "function" &&
@@ -997,8 +992,8 @@ export function ShaderOrb({
       const [initialIn, initialOut] = targetVolumes(stateRef.current, 0);
       cur.in = initialIn;
       cur.out = initialOut;
-      let last = performance.now() / 1000;
-      let raf = 0;
+      view.last = performance.now() / 1000;
+      frameId = 0;
       // smoothed frame time for the adaptive-resolution check
       let frameEma = 1 / 60;
 
@@ -1135,8 +1130,6 @@ export function ShaderOrb({
       };
 
       const releaseGL = () => {
-        resizeObserver?.disconnect();
-        intersectionObserver?.disconnect();
         gl.deleteProgram(prog);
         gl.deleteShader(vs);
         gl.deleteShader(fs);
@@ -1152,11 +1145,11 @@ export function ShaderOrb({
       }
 
       const loop = () => {
-        raf = requestAnimationFrame(loop);
+        frameId = requestAnimationFrame(loop);
         const now = performance.now() / 1000;
-        const dt = Math.min(now - last, 0.05);
-        last = now;
-        if (!visible || pausedRef.current) return;
+        const dt = Math.min(now - view.last, 0.05);
+        view.last = now;
+        if (!view.visible || pausedRef.current) return;
         tSec += dt;
 
         /*
@@ -1211,7 +1204,8 @@ export function ShaderOrb({
       loop();
 
       return () => {
-        cancelAnimationFrame(raf);
+        cancelAnimationFrame(frameId);
+        frameId = 0;
         releaseGL();
       };
     };
@@ -1266,44 +1260,7 @@ export function ShaderOrb({
     };
     window.addEventListener("pagehide", onPageHide);
 
-    let ctl = canvasControllers.get(canvas);
-    if (!ctl) {
-      const created: CanvasContextController = { desired: false, start: null, stopGen: null };
-      canvas.addEventListener("webglcontextlost", (event) => {
-        event.preventDefault(); // always cancel — keeps the context restorable
-        created.stopGen?.();
-        created.stopGen = null;
-        if (created.desired) {
-          /*
-            Ask for the context back — but in a LATER task. The browser only
-            marks a loss as restorable once the lost event's dispatch has
-            completed and it has seen the canceled flag, so a restoreContext()
-            issued during dispatch (or before it, as the mount path may) is
-            silently refused. This is the path a synchronous cleanup+setup
-            pair hits — React re-running the effect on the same canvas loses
-            the context and wants it right back. For losses we didn't cause
-            (eviction, GPU reset) the call may refuse; the canceled event then
-            lets the browser restore on its own schedule.
-          */
-          setTimeout(() => {
-            if (!created.desired) return;
-            try {
-              loseExt?.restoreContext();
-            } catch {
-              // Natural loss — restoration is the browser's call now.
-            }
-          }, 0);
-        }
-      });
-      canvas.addEventListener("webglcontextrestored", () => {
-        if (created.desired && created.start) {
-          created.stopGen = created.start();
-        }
-      });
-      canvasControllers.set(canvas, created);
-      ctl = created;
-    }
-    const controller = ctl;
+    const controller = ensureCanvasController(canvas, loseExt);
 
     controller.desired = true;
     controller.start = startGeneration;
@@ -1335,6 +1292,10 @@ export function ShaderOrb({
         layout one) or a wrapper is toggled.
       */
       hideNow();
+      cancelAnimationFrame(frameId);
+      frameId = 0;
+      resizeObserver?.disconnect();
+      intersectionObserver?.disconnect();
       canvas.removeEventListener("webglcontextlost", onContextLostHide);
       window.removeEventListener("pagehide", onPageHide);
       controller.desired = false;
@@ -1365,26 +1326,32 @@ export function ShaderOrb({
     */
   }, [variant, pauseOffscreen, maxDpr, wrapped]);
 
-  const sizeStyle: CSSProperties =
-    size === undefined ? {} : { width: size, height: size };
+  return { canvasRef, painted };
+}
 
-  /*
-    Spread ahead of the caller's `style`, so an orb that wants to own its own
-    opacity still can — it simply opts out of the reveal.
-
-    A hard flip, deliberately: no transition, no fade. A hidden document
-    (background tab, embedded preview) does not advance CSS transitions, so a
-    faded reveal left orbs pinned at zero in exactly the case the synchronous
-    first frame above exists to serve — mounted, healthy, and invisible. The
-    cut is not a pop either way, since it happens on the frame the orb first
-    has something to show.
-  */
-  const revealStyle: CSSProperties = painted ? {} : { opacity: 0 };
-
-  const canvas = (
+function ShaderOrbCanvas({
+  canvasRef,
+  variantKey,
+  spec,
+  className,
+  style,
+  sizeStyle,
+  revealStyle,
+  ariaLabel
+}: {
+  canvasRef: RefObject<HTMLCanvasElement | null>;
+  variantKey: string;
+  spec: WrapperSpec | undefined;
+  className?: string;
+  style?: CSSProperties;
+  sizeStyle: CSSProperties;
+  revealStyle: CSSProperties;
+  ariaLabel?: string;
+}) {
+  return (
     <canvas
       // A lost WebGL context can't be reused, so each variant gets a fresh canvas.
-      key={variant.key}
+      key={variantKey}
       ref={canvasRef}
       className={spec ? undefined : className}
       style={
@@ -1406,9 +1373,25 @@ export function ShaderOrb({
       aria-hidden={!spec && ariaLabel ? undefined : true}
     />
   );
+}
 
-  if (!spec) return canvas;
-
+function ShaderOrbFrame({
+  spec,
+  className,
+  style,
+  sizeStyle,
+  wrapperColor,
+  ariaLabel,
+  canvas
+}: {
+  spec: WrapperSpec;
+  className?: string;
+  style?: CSSProperties;
+  sizeStyle: CSSProperties;
+  wrapperColor?: string;
+  ariaLabel?: string;
+  canvas: ReactNode;
+}) {
   /*
     Wrapped: the box becomes the orb's footprint and the canvas is absolutely
     positioned inside it. `under`, the canvas and `over` are all positioned
@@ -1446,5 +1429,85 @@ export function ShaderOrb({
       {canvas}
       {spec.over}
     </div>
+  );
+}
+
+export function ShaderOrb({
+  variant,
+  state = "idle",
+  size,
+  params,
+  colors,
+  statePresets,
+  stateColors,
+  stateVolumes,
+  volumes,
+  paused = false,
+  pauseOffscreen = true,
+  maxDpr = 2,
+  wrapper = "none",
+  wrapperColor,
+  className,
+  style,
+  ariaLabel
+}: ShaderOrbProps) {
+  const spec = wrapper === "none" ? undefined : WRAPPER_SPECS[wrapper];
+  const wrapped = spec !== undefined;
+  const { canvasRef, painted } = useShaderOrbEngine({
+    variant,
+    state,
+    params,
+    colors,
+    statePresets,
+    stateColors,
+    stateVolumes,
+    volumes,
+    paused,
+    pauseOffscreen,
+    maxDpr,
+    wrapped
+  });
+
+  const sizeStyle: CSSProperties =
+    size === undefined ? {} : { width: size, height: size };
+
+  /*
+    Spread ahead of the caller's `style`, so an orb that wants to own its own
+    opacity still can — it simply opts out of the reveal.
+
+    A hard flip, deliberately: no transition, no fade. A hidden document
+    (background tab, embedded preview) does not advance CSS transitions, so a
+    faded reveal left orbs pinned at zero in exactly the case the synchronous
+    first frame above exists to serve — mounted, healthy, and invisible. The
+    cut is not a pop either way, since it happens on the frame the orb first
+    has something to show.
+  */
+  const revealStyle: CSSProperties = painted ? {} : { opacity: 0 };
+
+  const canvas = (
+    <ShaderOrbCanvas
+      canvasRef={canvasRef}
+      variantKey={variant.key}
+      spec={spec}
+      className={className}
+      style={style}
+      sizeStyle={sizeStyle}
+      revealStyle={revealStyle}
+      ariaLabel={ariaLabel}
+    />
+  );
+
+  if (!spec) return canvas;
+
+  return (
+    <ShaderOrbFrame
+      spec={spec}
+      className={className}
+      style={style}
+      sizeStyle={sizeStyle}
+      wrapperColor={wrapperColor}
+      ariaLabel={ariaLabel}
+      canvas={canvas}
+    />
   );
 }
